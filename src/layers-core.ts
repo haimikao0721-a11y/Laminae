@@ -33,6 +33,9 @@ import type { Interval } from "./types.ts";
 export const DEPTHS = ["empty", "unimplemented", "placeholder", "forward", "substantive"] as const;
 export type Depth = (typeof DEPTHS)[number];
 
+/** 顺着调用链最多追几跳。追得越远越不可信，报告按 hops 标置信度 */
+const MAX_CALL_HOPS = 4;
+
 const UNIMPLEMENTED = /not implemented|NotImplementedError|未实现|unimplemented!\(|todo!\(/i;
 
 /** 这个文件看上去是哪种。有实质代码只表示「不是空的、不是纯转发」，不表示真的实现了 */
@@ -72,17 +75,42 @@ const REASON_TEXT: Record<FnReason, string> = {
 
 /** 具名函数里，往下看一层有问题的那些。行号是函数定义那一行。不把整个文件算进去 */
 /** 函数体只有一句对别的名字的调用，而且那个名字不是本文件里已经有问题的函数。跨文件要靠 import 再追 */
-export function delegatedCalls(text: string): { name: string; line: number; callee: string }[] {
+/**
+ * 函数体里调用了本文件之外的哪些名字。
+ *
+ * 原来只认「函数体只有一句调用」—— 真实代码里只要多一个 if、await 或第二句，
+ * 整条链就断了。现在扫函数体里任意位置的调用点，用 strict 标出是不是原来那种单句委托。
+ *
+ * 仍然只记名字，不记参数、不记返回值。名字重复的合并成一条。
+ */
+export function delegatedCalls(text: string): { name: string; line: number; callee: string; strict: boolean }[] {
   const fns = pickModule(text).findFunctions(text);
-  const local = new Set(fns.filter((f) => f.reason && f.name).map((f) => f.name!));
-  const out: { name: string; line: number; callee: string }[] = [];
+  if (fns.length === 0) return [];
+  const localHollow = new Set(fns.filter((f) => f.reason && f.name).map((f) => f.name!));
+  const localAny = new Set(fns.flatMap((f) => (f.name ? [f.name] : [])));
+  // 这些不是函数调用
+  const KEYWORDS = new Set([
+    "if", "for", "while", "switch", "catch", "return", "typeof", "function", "await", "new",
+    "super", "this", "delete", "void", "in", "of", "do", "else", "try", "throw", "yield", "case",
+    "def", "elif", "except", "with", "assert", "lambda", "not", "and", "or", "is", "print",
+  ]);
+  const out: { name: string; line: number; callee: string; strict: boolean }[] = [];
   for (const f of fns) {
     if (!f.name || f.reason) continue;
     const chunk = text.slice(f.start, f.end);
     const body = chunk.includes("{") ? (/\{([\s\S]*)\}/.exec(chunk)?.[1] ?? "") : chunk.split("\n").slice(1).join("\n");
-    const call = /^\s*(?:return\s+)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*;?\s*$/.exec(body.trim());
-    if (!call || local.has(call[1]!)) continue;
-    out.push({ name: f.name, line: text.slice(0, f.start).split("\n").length, callee: call[1]! });
+    const trimmed = body.trim();
+    const single = /^\s*(?:return\s+)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*;?\s*$/.exec(trimmed);
+    const strict = single !== null && !localHollow.has(single[1]!);
+    const seen = new Set<string>();
+    for (const m of body.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)) {
+      const callee = m[1]!;
+      if (KEYWORDS.has(callee)) continue;
+      if (localAny.has(callee)) continue; // 本文件里的自己会单独判，不跨文件追
+      if (seen.has(callee)) continue;
+      seen.add(callee);
+      out.push({ name: f.name, line: text.slice(0, f.start).split("\n").length, callee, strict: strict && single?.[1] === callee });
+    }
   }
   return out;
 }
@@ -395,7 +423,7 @@ export interface LayersData {
   /** 认得出扩展名、但没有语法模块 */
   unsupported: { file: string; alive: Interval[] }[];
   /** 具名函数：往下看一层有问题。没有说法指向它也会留下 */
-  down: { file: string; name: string; line: number; reason: FnReason; via: string; alive: Interval[] }[];
+  down: { file: string; name: string; line: number; reason: FnReason; via: string; hops: number; alive: Interval[] }[];
 }
 
 export interface ContractKind {
@@ -505,6 +533,7 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
   const downFlags = new Map<string, boolean[]>();
   const downLine = new Map<string, number>();
   const downVia = new Map<string, string>();
+  const downHops = new Map<string, number>();
   const fakeNote = new Map<string, string>();
   const mark = (map: Map<string, boolean[]>, key: string, i: number): void => {
     let fl = map.get(key);
@@ -582,9 +611,16 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
       if (!byName) hollowAt.set(h.file, (byName = new Map()));
       byName.set(h.name, h.reason);
     }
-    // 两跳：A 调用 B，B 可能自己也是刚追出来的跨文件调用
-    let pending = [...(c.layer.delegates ?? [])];
-    for (let hop = 0; hop < 2 && pending.length > 0; hop++) {
+    // 顺着调用链往外追。原来只追两跳，真实代码里 A→B→C→D 很常见，两跳就断了。
+    // 追得越远越不可信，所以每条结论记一个 hops，报告按它标置信度：
+    // 1 跳是直接看到「这个函数调用了一个空实现」，4 跳是推出来的。
+    // 跳数有上限，不需要额外的去重集合：环最多转到 MAX_CALL_HOPS 就停，mark 本身幂等。
+    // 之前加过一个「已访问」集合，结果第一跳就把还没追到的项记成访问过，第二跳直接跳过，
+    // 整条链反而断了。
+    let pending: { file: string; name: string; line: number; callee: string; strict?: boolean }[] = [
+      ...(c.layer.delegates ?? []),
+    ];
+    for (let hop = 1; hop <= MAX_CALL_HOPS && pending.length > 0; hop++) {
       const next: typeof pending = [];
       for (const d of pending) {
         const binding = (factDepth.get(d.file)?.imports ?? []).find((b) => b.local === d.callee);
@@ -592,13 +628,15 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
         const target = resolveRel(d.file, binding.spec, filesNow);
         const reason = target ? hollowAt.get(target)?.get(binding.imported) : undefined;
         if (!target || !reason) {
-          if (hop === 0) next.push(d);
+          // 还没追到：下一跳再试。已经到最后一跳就不必了
+          if (hop < MAX_CALL_HOPS) next.push(d);
           continue;
         }
         const key = `${d.file}\u0000${d.name}\0calls-other`;
         mark(downFlags, key, i);
         downLine.set(key, d.line);
         downVia.set(key, `${target}:${binding.imported}`);
+        downHops.set(key, hop);
         let byName = hollowAt.get(d.file);
         if (!byName) hollowAt.set(d.file, (byName = new Map()));
         byName.set(d.name, "calls-other");
@@ -677,7 +715,7 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
     unsupported: intervals(unsupportedFlags).map(({ key, alive }) => ({ file: key, alive })),
     down: intervals(downFlags).map(({ key, alive }) => {
       const [file, name, reason] = key.split("\u0000") as [string, string, FnReason];
-      return { file, name, line: downLine.get(key) ?? 1, reason, via: downVia.get(key) ?? "", alive };
+      return { file, name, line: downLine.get(key) ?? 1, reason, via: downVia.get(key) ?? "", hops: downHops.get(key) ?? 1, alive };
     }),
   };
 }
@@ -704,7 +742,7 @@ export interface LayerReport {
   contracts: ContractKind[];
   clues: { kind: string; file: string; alive: Interval[] }[];
   unsupported: { file: string; alive: Interval[] }[];
-  down: { file: string; name: string; line: number; reason: FnReason; via: string; holds: string[]; alive: Interval[] }[];
+  down: { file: string; name: string; line: number; reason: FnReason; via: string; hops: number; holds: string[]; alive: Interval[] }[];
 }
 
 const HOLDS = 0; // 说法的「真」和想法的「已满足」都是 0
