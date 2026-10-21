@@ -27,12 +27,22 @@ test("hollowFunctions：只标有问题的具名函数和它的行，不把整�
   assert.equal(hollowFunctions(text).some((f) => f.name === "real"), false);
 });
 
-test("delegatedCalls：函数体只有一句调用时记下来", () => {
-  const text = "import { later } from './b'\nexport function run() {\n  return later(1)\n}\n";
-  assert.deepEqual(delegatedCalls(text), [{ name: "run", line: 2, callee: "later" }]);
+test("delegatedCalls：函数体里任意位置的调用都记下来，并标出是不是单句委托", () => {
+  const single = "import { later } from './b'\nexport function run() {\n  return later(1)\n}\n";
+  assert.deepEqual(delegatedCalls(single), [{ name: "run", line: 2, callee: "later", strict: true }]);
+
+  // 多一个 if 就不再是单句委托，但调用点仍然要看得到 —— 原来这里整条链就断了
+  const nested = "import { later } from './b'\nexport function run(x) {\n  if (x) {\n    return later(1)\n  }\n  return 0\n}\n";
+  const got = delegatedCalls(nested);
+  assert.deepEqual(got.map((d) => d.callee), ["later"]);
+  assert.equal(got[0]!.strict, false);
+
+  // 本文件里的名字不跨文件追
+  const local = "function helper() { return 1 }\nexport function run() {\n  return helper()\n}\n";
+  assert.deepEqual(delegatedCalls(local), []);
 });
 
-test("buildLayers：跨文件调用追到写着没实现的函数，最多两跳", () => {
+test("buildLayers：跨文件调用追到写着没实现的函数，最多四跳", () => {
   const data = buildLayers([
     commit(["src/a.ts", "src/mid.ts", "src/b.ts"], [], {
       facts: [
@@ -52,6 +62,9 @@ test("buildLayers：跨文件调用追到写着没实现的函数，最多两跳
   assert.equal(mid?.via, "src/b.ts:later");
   assert.equal(run?.reason, "calls-other");
   assert.equal(run?.via, "src/mid.ts:mid");
+  // 跳数记下来：1 跳是直接看到的，越远越是推出来的
+  assert.equal(mid?.hops, 1, "mid 直接调用空实现，1 跳");
+  assert.equal(run?.hops, 2, "run 要经过 mid 才知道，2 跳");
 });
 
 test("isEntryPoint：主文件、index 和 bin、cmd 下的命令是入口", () => {
