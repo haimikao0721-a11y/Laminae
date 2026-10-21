@@ -66,6 +66,24 @@ function parsePython(line: string): RawImport[] | null {
 
 现在加一门语言要写 TypeScript：一个 `parseX`、一个 `resolveX`、再加上层与层对账里的分支。这是**为什么只有两门语言**。
 
+**第一层已经做了：判断收成了一处。** 原来判断散在三个调用点的三元表达式里（`findPythonFunctions(text).length > 0 && !/(?:function\s*\(|=>)/`），现在只有 `pickModule` 一处判断语言，别的地方一律问模块。
+
+| 文件 | 放什么 |
+|---|---|
+| `src/syntax.ts` | 接口与共用零件（括号配对、跳过字符串、函数体判空、处理函数归类） |
+| `src/syntax-js.ts` | JS/TS：花括号函数体、`import … from`、`app.get("/x")`、NestJS 的 `@Get("/x")` |
+| `src/syntax-py.ts` | Python：按缩进判函数体、`from … import`、`@router.get("/x")`、`APIRouter(prefix=)`、`include_router` |
+| `src/syntax-registry.ts` | 查表。`pickModule` 是唯一判断「这段文本是哪门语言」的地方 |
+
+分法有个不对称，是有意的：
+
+- **函数查找只问认出来的那个模块**
+- **路由与 import 解析把所有模块问一遍再拼起来**
+
+后者不是偷懒。一个只写了 `app = FastAPI()` 和 `include_router` 的文件里没有 `def`，认不出是 Python，但它确实在做挂载；只问认出来的模块，前缀就拼丢了。
+
+**第二层还没做**：模块的内容仍然写在 TypeScript 里。往下是把这些正则挪进 JSON，让引擎通用。
+
 改成声明式之后，加一门语言是往 JSON 里填几个正则：
 
 ```json

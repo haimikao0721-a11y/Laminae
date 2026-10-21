@@ -66,6 +66,24 @@ A wholesale language change also adds a second runtime. "You need Node, and the 
 
 Adding a language today means writing TypeScript: a `parseX`, a `resolveX`, and another branch inside layer reconciliation. **That is why there are only two languages.**
 
+**The first layer is done: detection now lives in one place.** It used to be spread across three call sites as inline ternaries (`findPythonFunctions(text).length > 0 && !/(?:function\s*\(|=>)/`); now only `pickModule` decides which language a piece of text is written in, and everything else asks a module.
+
+| File | What goes there |
+|---|---|
+| `src/syntax.ts` | the interface and the shared parts (bracket matching, string skipping, body emptiness, handler classification) |
+| `src/syntax-js.ts` | JS/TS: brace-delimited bodies, `import … from`, `app.get("/x")`, NestJS `@Get("/x")` |
+| `src/syntax-py.ts` | Python: indentation-delimited bodies, `from … import`, `@router.get("/x")`, `APIRouter(prefix=)`, `include_router` |
+| `src/syntax-registry.ts` | the lookup. `pickModule` is the only place that decides which language a piece of text is written in |
+
+There is one deliberate asymmetry in the split:
+
+- **Function finding asks only the module that was recognised**
+- **Route and import parsing asks every module and merges the results**
+
+The second is not laziness. A file containing only `app = FastAPI()` and `include_router` has no `def` in it and so is not recognised as Python, yet it really is doing a mount; asking only the recognised module would lose the prefix.
+
+**The second layer is not done yet**: the modules' contents are still written in TypeScript. The next step is moving those regexes into JSON so the engine becomes generic.
+
 Made declarative, adding a language means filling a few regexes into JSON:
 
 ```json
