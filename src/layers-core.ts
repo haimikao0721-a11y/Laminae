@@ -93,7 +93,11 @@ export function delegatedCalls(text: string): { name: string; line: number; call
   ]);
   const out: { name: string; line: number; callee: string; strict: boolean; local: boolean }[] = [];
   for (const f of fns) {
-    if (!f.name || f.reason) continue;
+    if (!f.name) continue;
+    // 结构上就空的（空、写着没实现、只返回常量）不用从这里追，它们自己就是链的底。
+    // 但 calls-empty 不一样：它表示「这个函数只调用了同文件里的空实现」，
+    // 那正是要接着往上走的一层 —— 跳过它，链就断在它这里。
+    if (f.reason !== null && f.reason !== "calls-empty") continue;
     const chunk = text.slice(f.start, f.end);
     const body = chunk.includes("{") ? (/\{([\s\S]*)\}/.exec(chunk)?.[1] ?? "") : chunk.split("\n").slice(1).join("\n");
     const trimmed = body.trim();
@@ -103,9 +107,8 @@ export function delegatedCalls(text: string): { name: string; line: number; call
     for (const m of body.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)) {
       const callee = m[1]!;
       if (KEYWORDS.has(callee)) continue;
-      // 本文件里的名字不在这里追：findFunctions 已经把「函数体只有一句对同文件空实现的调用」
-      // 判成 calls-empty 了，再追一遍会打架。嵌套在 if 里的同文件调用目前仍然看不见，
-      // 这一块要单独做（见 docs/REFERENCE 的已知限制）
+      // 文件内的调用也收，用 local 标出来。原来这里直接丢掉，于是「调用路径」只覆盖
+      // 跨文件那一半，而真实的链常常是文件内几跳之后才跨出去。
       if (seen.has(callee)) continue;
       seen.add(callee);
       out.push({ name: f.name, line: text.slice(0, f.start).split("\n").length, callee, strict: strict && single?.[1] === callee, local: localAny.has(callee) });
@@ -625,7 +628,10 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
     // 文件内的调用（d.local）不查 import，直接就是本文件的函数 —— 原来这一类被整个丢掉了，
     // 于是「函数调用路径」只覆盖跨文件那一半。
     const dist = new Map<string, number>();
-    for (const [file, byName] of hollowAt) for (const name of byName.keys()) dist.set(`${file}\u0000${name}`, 0);
+    // 只有「结构上就空的」是链的底，距离给 0。
+    // calls-empty 不给 —— 它的距离要顺着「它调用的是谁」算出来，先给 0 会低估整条链。
+    for (const [file, byName] of hollowAt)
+      for (const [name, reason] of byName) if (reason !== "calls-empty") dist.set(`${file}\u0000${name}`, 0);
     const visitedCall = new Set<string>();
     const calls = c.layer.delegates ?? [];
     let progressed = true;

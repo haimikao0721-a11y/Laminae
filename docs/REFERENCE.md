@@ -96,7 +96,7 @@
 - 契约目前只有 HTTP 路径一种。路由声明认 `app` / `router` 一类的 `.get("/x")` 和 Python 的 `@router.get("/x")`、`@app.route("/x")`，引用认 `fetch("/x")` 和 `axios.get("/x")`。`APIRouter(prefix="/users")` 与 `include_router(router, prefix="/api/v1")` 会拼成 `/api/v1/users/...`，`from users import router` 这种跨文件挂载也拼。带变量的路径（`` `/api/${id}` ``）对不上，直接跳过。
 - 仓库里没有任何路由声明时，`fetch` 调用不判为洞：分不清是在调外部服务，还是本仓库没实现。反过来，只有声明没有调用也不判，调用方可以在仓库外。
 - 注入线索认 `eval(`、`new Function(`、`child_process`、`.innerHTML`、`dangerouslySetInnerHTML`、`os.system(`、`subprocess`、`document.write(`。出现不等于能被利用，页面上标的是线索。
-- 跨文件函数调用：函数体里**任意位置**的调用点都算，不再要求「只有一句调用」（原来多一个 `if` 或 `await` 整条链就断了）。被调的名字必须来自相对 import（`./`、`../`、Python 的 `.`）。从已经有问题的函数往外，最多追 4 跳；每一跳记一个 `hops`，报告按它标置信度 —— **1 跳是直接看到的，4 跳是推出来的**。第三方包不追。行号是定义行。
+- 函数调用：**同一个文件内**的调用也算（用 `local` 标出，不需要查 import），任意位置的调用点都算，不再要求「只有一句调用」（原来多一个 `if` 或 `await` 整条链就断了）。被调的名字必须来自相对 import（`./`、`../`、Python 的 `.`）。从已经有问题的函数往外，最多追 4 跳；每一跳记一个 `hops`，报告按它标置信度 —— **1 跳是直接看到的，4 跳是推出来的**。第三方包不追。行号是定义行。
 
 ### 调用关系图的限制
 
