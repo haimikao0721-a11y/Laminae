@@ -37,9 +37,12 @@ test("delegatedCalls：函数体里任意位置的调用都记下来，并标出
   assert.deepEqual(got.map((d) => d.callee), ["later"]);
   assert.equal(got[0]!.strict, false);
 
-  // 本文件里的名字不在这里追：findFunctions 已经把单句委托判成 calls-empty，再追一遍会打架
+  // 本文件里的调用也收，用 local 标出来 —— 调用路径不能只覆盖跨文件那一半
   const local = "function helper() { return 1 }\nexport function run() {\n  return helper()\n}\n";
-  assert.deepEqual(delegatedCalls(local), []);
+  assert.deepEqual(
+    delegatedCalls(local).map((d) => [d.name, d.callee, d.local]),
+    [["run", "helper", true]],
+  );
 });
 
 test("buildLayers：跨文件调用追到写着没实现的函数，最多四跳", () => {
