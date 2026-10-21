@@ -98,7 +98,7 @@ The parent directory (the level that is not a repository but has repositories be
 
 ### Limits of the module import graph
 
-- Module-level imports only, for JS/TS (`import`, `require`, dynamic `import()`, `export … from`) and Python (`import`, `from … import`). Java, Go, Rust, C# and other languages are not recognized: files whose extension is not among `.js` / `.ts` / `.jsx` / `.tsx` / `.mjs` / `.cjs` / `.py` are not treated as code.
+- Module-level imports only, for JS/TS (`import`, `require`, dynamic `import()`, `export … from`) and Python (`import`, `from … import`). Java, Go, Rust, C# and other languages are not recognized (see [LANGUAGES.md](LANGUAGES.en.md) for how extensions work): files whose extension is not among `.js` / `.ts` / `.jsx` / `.tsx` / `.mjs` / `.cjs` / `.py` are not treated as code.
 - There is no function-level call graph.
 - Python's multi-line `from x import (\n a,\n b)` reads only the names on the first line.
 - Text that looks like an import inside comments or strings may produce spurious edges.
