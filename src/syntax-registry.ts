@@ -16,13 +16,14 @@
  */
 import { jsModule } from "./syntax-js.ts";
 import { pyModule } from "./syntax-py.ts";
+import { rsModule } from "./syntax-rs.ts";
 import type { Binding, PyMount, PyRouter, RouteDecl, SyntaxModule } from "./syntax.ts";
 
 /** 认语言的优先顺序：先严后松 */
-export const MODULES: readonly SyntaxModule[] = [pyModule, jsModule];
+export const MODULES: readonly SyntaxModule[] = [pyModule, rsModule, jsModule];
 
 /** 多模块结果合并时的顺序，保持原来的 JS → Nest → Python */
-const MERGE_ORDER: readonly SyntaxModule[] = [jsModule, pyModule];
+const MERGE_ORDER: readonly SyntaxModule[] = [jsModule, pyModule, rsModule];
 
 export function pickModule(text: string): SyntaxModule {
   for (const m of MODULES) if (m.looksLike(text)) return m;
@@ -64,4 +65,4 @@ export function allMounts(text: string): PyMount[] {
   return MERGE_ORDER.flatMap((m) => m.mounts?.(text) ?? []);
 }
 
-export { jsModule, pyModule };
+export { jsModule, pyModule, rsModule };

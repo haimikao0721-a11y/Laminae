@@ -10,8 +10,8 @@ Only JS/TS and Python are recognised today. This document covers three things: w
 
 | Class | Extensions | What happens |
 |---|---|---|
-| Supported syntax module | `.js .ts .jsx .tsx .mjs .cjs .mts .cts`, `.py` | Imports parsed, graph built, hollow implementations and routes detected |
-| Recognised, no syntax module | `.java .go .rs .cs .c .cc .cpp .h .hpp .kt .kts .swift .rb .php .scala .m .mm` | Listed under "syntax not supported yet"; no graph edges, no hollow-implementation checks |
+| Supported syntax module | `.js .ts .jsx .tsx .mjs .cjs .mts .cts`, `.py`, `.rs` | Imports parsed, graph built, hollow implementations and routes detected |
+| Recognised, no syntax module | `.java .go .cs .c .cc .cpp .h .hpp .kt .kts .swift .rb .php .scala .m .mm` | Listed under "syntax not supported yet"; no graph edges, no hollow-implementation checks |
 | Not treated as code | everything else | Ignored entirely |
 
 **That split is deliberate.** Recognising an extension and then guessing at the structure produces fake reference edges and fake hollow-implementation findings — worse than not judging at all.
