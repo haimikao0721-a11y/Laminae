@@ -132,6 +132,47 @@ test("buildLayers：孤立模块排除入口、测试和被引用的文件", () 
   assert.deepEqual(data.unreferenced.map((u) => u.file), ["src/dead.ts"]);
 });
 
+test("buildLayers：按约定加载的文件不算孤立，也不算只有测试引用", () => {
+  const data = buildLayers([
+    commit(
+      ["src/index.ts", "src/only-test.ts", "scripts/build.mjs", "src/renderers/erd/render-erd.mjs", "src/nowhere.mjs"],
+      [["src/index.ts", "src/only-test.ts"], ["src/x.test.ts", "src/only-test.ts"]],
+      { convention: ["scripts/build.mjs", "src/renderers/erd/render-erd.mjs", "src/only-test.ts"] },
+    ),
+  ]);
+  assert.deepEqual(data.unreferenced.map((u) => u.file), ["src/nowhere.mjs"], "只有哪儿都没提到的才是孤立");
+  assert.deepEqual(data.testOnly.map((u) => u.file), [], "有别的证据时不算「只有测试引用」");
+  assert.deepEqual(data.convention.map((c) => c.file).sort(), [
+    "scripts/build.mjs",
+    "src/only-test.ts",
+    "src/renderers/erd/render-erd.mjs",
+  ]);
+});
+
+test("扫描：package.json 里按路径调用的脚本不算孤立模块", () => {
+  const repo = new TestRepo();
+  repo.commit(
+    {
+      "README.md": "# x\n\n共 1 个源文件。\n",
+      "package.json": JSON.stringify({ name: "x", scripts: { build: "node scripts/build.mjs" } }, null, 2),
+      "src/index.ts": "export const a = 1;\n",
+      "scripts/build.mjs": "console.log('build');\n",
+      "src/dead.mjs": "console.log('dead');\n",
+    },
+    "c0",
+  );
+  writeClaims(repo, [
+    { id: "srcs", label: "源文件数", file: "README.md", locator: "共 (\\d+) 个源文件", fact: { type: "count-files", glob: "src/*.ts" } },
+  ]);
+  runLaminae(repo, "scripts/run.ts", ["data"]);
+
+  const payload = JSON.parse(fs.readFileSync(runFile(repo, "payload.json"), "utf8")) as { layers?: LayerReport };
+  const l = payload.layers!;
+  assert.ok(!l.orphans.some((o) => o.file === "scripts/build.mjs"), "package.json 按路径调用的脚本不是孤立模块");
+  assert.ok(l.convention.some((c) => c.file === "scripts/build.mjs"), "记在按约定加载里");
+  assert.ok(l.orphans.some((o) => o.file === "src/dead.mjs"), "哪儿都没提到的仍是孤立模块");
+});
+
 test("buildLayers：契约缺任何一侧都不算对不上，两侧都在才比较", () => {
   const onlyRefs = buildLayers([commit(["a.ts"], [], { references: [{ kind: "route", name: "/api/x", file: "a.ts" }] })]);
   assert.equal(onlyRefs.contracts[0]!.unmet.length, 0, "只有引用、没有声明：可能是在调外部服务");

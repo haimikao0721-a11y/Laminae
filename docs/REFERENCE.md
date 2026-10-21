@@ -91,6 +91,8 @@
 - 纯转发只认整文件都是 `export … from` 或 Python 的相对 import。转发只再追两跳。
 - 措辞盖住差额：`compare` 为 `gte` 或 `lte` 且成立，相对差额至少 15%，并且绝对差额至少 2，才记。「共 5、实际 6」只差 1，不记；「1600、实际 1899」两个都够，记。这两个数是人为定的，不是从误报样本估出来的。
 - 孤立模块把 `index`、`main`、`cli`、`app`、`server`、`mod`、`__init__`、`__main__` 和 `bin/`、`cmd/` 下的文件当入口，不算孤立。被测试引用的文件也不算。
+- 没有 import 边、但**文件名在别的文件正文里作为字面量出现过**的，记为「按约定加载」，不算孤立。依据是这三类东西在静态图上一条边都没有：`package.json` 的 `scripts` 按路径调用的脚本、页面里 `<script src>` 引用的资产、模板串拼出来的路径（``` `renderers/${type}/render-${type}.mjs` ```）。名字短于 5 个字符的不算，否则 `index.js` 一类的名字会把真的孤立盖住。只在测试文件里被提到也算数。
+- 这一档的代价要说清楚：**它只能证明「有人按名字引用过」，不能证明「真的跑得到」**。名字写错、引用了已删除的文件，都会看起来像在用。
 - 契约目前只有 HTTP 路径一种。路由声明认 `app` / `router` 一类的 `.get("/x")` 和 Python 的 `@router.get("/x")`、`@app.route("/x")`，引用认 `fetch("/x")` 和 `axios.get("/x")`。`APIRouter(prefix="/users")` 与 `include_router(router, prefix="/api/v1")` 会拼成 `/api/v1/users/...`，`from users import router` 这种跨文件挂载也拼。带变量的路径（`` `/api/${id}` ``）对不上，直接跳过。
 - 仓库里没有任何路由声明时，`fetch` 调用不判为洞：分不清是在调外部服务，还是本仓库没实现。反过来，只有声明没有调用也不判，调用方可以在仓库外。
 - 注入线索认 `eval(`、`new Function(`、`child_process`、`.innerHTML`、`dangerouslySetInnerHTML`、`os.system(`、`subprocess`、`document.write(`。出现不等于能被利用，页面上标的是线索。

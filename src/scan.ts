@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { REPO } from "./config.ts";
 import type { CommitGraph } from "./graph-core.ts";
 import { git } from "./gitutil.ts";
-import { indexPackages, isCodeFile, parseBareSpecs, parseFileImports, resolveBareSpecs, resolvePython, resolveRaw } from "./imports.ts";
+import { indexPackages, isCodeFile, isTestFile, parseBareSpecs, parseFileImports, resolveBareSpecs, resolvePython, resolveRaw } from "./imports.ts";
 import { isUnsupportedCode } from "./lang.ts";
 import type { RawImport, ResolveEnv } from "./imports.ts";
 import { EMPTY_COMMIT_LAYER, mountRoutes, scanFileLayer } from "./layers-core.ts";
@@ -81,12 +81,20 @@ export class BlobReader {
 }
 
 /** 一个 commit 上：文件 → blob 号，以及判断「引用有没有可能变过」的签名 */
-function snapshot(sha: string): { files: Map<string, string>; code: string[]; unsupported: string[]; pkgs: string[]; sig: string } {
+function snapshot(sha: string): {
+  files: Map<string, string>;
+  code: string[];
+  unsupported: string[];
+  pkgs: string[];
+  declares: string[];
+  sig: string;
+} {
   const out = git(["ls-tree", "-r", sha]) ?? "";
   const files = new Map<string, string>();
   const code: string[] = [];
   const unsupported: string[] = [];
   const pkgs: string[] = [];
+  const declares: string[] = [];
   const h = createHash("sha1");
   for (const line of out.split("\n")) {
     if (!line) continue;
@@ -103,10 +111,96 @@ function snapshot(sha: string): { files: Map<string, string>; code: string[]; un
       h.update(`${oid}\t${file}\n`);
     } else if (file === "package.json" || file.endsWith("/package.json")) {
       pkgs.push(file);
+      declares.push(file);
+      h.update(`${oid}\t${file}\n`);
+    } else if (DECLARES_EXT.test(file) && !BIG_EXT.test(file)) {
+      // 配置、清单、页面与文档：里面有路径字面量的可能。改了会影响「按约定加载」的判定，
+      // 所以要进签名 —— 但正文按 blob 缓存，实际不会重读
+      declares.push(file);
       h.update(`${oid}\t${file}\n`);
     }
   }
-  return { files, code, unsupported, pkgs, sig: h.digest("hex") };
+  return { files, code, unsupported, pkgs, declares, sig: h.digest("hex") };
+}
+
+/**
+ * 可能用路径字面量提到别的文件的那些：清单、页面、构建配置、文档。
+ * 不看图片与压缩包 —— 名字在二进制里出现不算证据。
+ */
+const DECLARES_EXT = /\.(json|html?|astro|vue|svelte|ya?ml|toml|md|mdx|txt|cfg|ini|mk|sh|ps1|bat|cmd)$/i;
+const BIG_EXT = /\.(min\.js|map|lock)$/i;
+
+function countOf(hay: string, needle: string): number {
+  let n = 0;
+  let i = hay.indexOf(needle);
+  while (i >= 0) {
+    n++;
+    i = hay.indexOf(needle, i + needle.length);
+  }
+  return n;
+}
+
+/**
+ * 「按约定加载」的文件：没有任何 import 边，但文件名在别的文件正文里作为字面量出现过。
+ *
+ * 真实仓库里至少有三类这样的东西，静态图上一条边都没有：
+ *   - package.json 的 scripts 按路径调用的脚本：`node scripts/run-tests.mjs`
+ *   - 页面里的 `<script src="viewer/export.js">`
+ *   - 模板串拼出来的路径：`path.join(root, 'renderers', type, \`render-${type}.mjs\`)`
+ *
+ * 三者共有一个可机械检查的特征：**文件名出现在某个文件的正文里**。所以这里不猜目录名、
+ * 不猜框架、不看 import 语句，只查这一件事。
+ *
+ * 查不到的不算 —— 宁可留下一个可疑的，也不要把真的孤立说成「用过」。
+ * 名字太短的不算：`index.js`、`a.js` 这种命中率太高，当证据会盖住真的孤立。
+ */
+function conventionRefs(
+  snap: { files: ReadonlyMap<string, string>; code: readonly string[]; declares: readonly string[] },
+  edges: readonly (readonly [string, string])[],
+  info: ReadonlyMap<string, BlobInfo>,
+  declaresText: ReadonlyMap<string, string>,
+): string[] {
+  const incomingBy = new Map<string, string[]>();
+  for (const [s, t] of edges) {
+    const arr = incomingBy.get(t);
+    if (arr) arr.push(s);
+    else incomingBy.set(t, [s]);
+  }
+
+  // 要看两类文件：一条边都没有的，和只有测试文件引用的。
+  // 后一类如果没有别的证据，会被判成「只有测试引用它，生产代码没用」——
+  // 但按路径调用的脚本、页面引用的资产本来就不会有生产代码的边。
+  const candidates = snap.code.filter((f) => {
+    if (isTestFile(f)) return false;
+    const srcs = incomingBy.get(f) ?? [];
+    return srcs.length === 0 || srcs.every(isTestFile);
+  });
+  if (candidates.length === 0) return [];
+
+  // 正文收全部代码文件，测试也算：一个文件只被测试按名字用到，也不是「没人用」。
+  // 代价是「只在测试里被提到」和「在配置里被声明」分不开 —— 两者都算按约定加载。
+  // 宁可漏掉一个真的孤立，也不要把在用的文件报成没人用。
+  const hay: string[] = [];
+  for (const f of snap.code) {
+    const t = info.get(snap.files.get(f) ?? "")?.text;
+    if (t) hay.push(t);
+  }
+  for (const f of snap.declares) {
+    const t = declaresText.get(snap.files.get(f) ?? "");
+    if (t) hay.push(t);
+  }
+  const haystack = hay.join("\n");
+  if (haystack === "") return [];
+
+  const out: string[] = [];
+  for (const f of candidates) {
+    const base = f.slice(f.lastIndexOf("/") + 1);
+    if (base.length < 5) continue;
+    if (!haystack.includes(base)) continue;
+    const own = info.get(snap.files.get(f) ?? "")?.text ?? "";
+    if (countOf(haystack, base) > countOf(own, base)) out.push(f);
+  }
+  return out;
 }
 
 export interface CommitScan {
@@ -127,6 +221,8 @@ interface BlobInfo {
   raw: RawImport[];
   bare: string[];
   layer: FileLayer;
+  /** 正文。用来查「这个文件名有没有被别的文件按字面量提到」 */
+  text: string;
 }
 
 export class ImportScanner {
@@ -135,6 +231,8 @@ export class ImportScanner {
   private infoByBlob = new Map<string, BlobInfo>();
   /** package.json 的 blob 号 → 正文 */
   private pkgByBlob = new Map<string, string | null>();
+  /** 配置、清单、页面与文档的 blob 号 → 正文。用来查「按名字提到」，不是 import 边 */
+  private declaresText = new Map<string, string>();
   private prevSig = "";
   private prev: { graph: CommitGraph; unresolved: readonly (readonly [string, string])[]; layer: CommitLayer } = {
     graph: { files: [], edges: [] },
@@ -161,14 +259,16 @@ export class ImportScanner {
   private async analyze(snap: ReturnType<typeof snapshot>): Promise<{ graph: CommitGraph; unresolved: [string, string][]; layer: CommitLayer }> {
     const needCode = [...new Set(snap.code.map((f) => snap.files.get(f)!))].filter((o) => !this.infoByBlob.has(o));
     const needPkg = [...new Set(snap.pkgs.map((f) => snap.files.get(f)!))].filter((o) => !this.pkgByBlob.has(o));
-    const texts = await this.reader.read([...needCode, ...needPkg]);
+    const needDecl = [...new Set(snap.declares.map((f) => snap.files.get(f)!))].filter((o) => !this.declaresText.has(o));
+    const texts = await this.reader.read([...new Set([...needCode, ...needPkg, ...needDecl])]);
     this.blobsRead += texts.size;
+    for (const o of needDecl) this.declaresText.set(o, texts.get(o) ?? "");
     const kindOf = new Map<string, string>(); // 同一个 blob 号按它的文件扩展名选解析方式
     for (const f of snap.code) kindOf.set(snap.files.get(f)!, f);
     for (const o of needCode) {
       const file = kindOf.get(o)!;
       const text = texts.get(o) ?? "";
-      this.infoByBlob.set(o, { raw: parseFileImports(file, text), bare: parseBareSpecs(file, text), layer: scanFileLayer(text) });
+      this.infoByBlob.set(o, { raw: parseFileImports(file, text), bare: parseBareSpecs(file, text), layer: scanFileLayer(text), text });
     }
     for (const o of needPkg) this.pkgByBlob.set(o, texts.get(o) ?? null);
 
@@ -217,6 +317,7 @@ export class ImportScanner {
       ...(d.via ? { via: d.via } : {}),
       ...(d.imported ? { imported: d.imported } : {}),
     }));
+    layer.convention = conventionRefs(snap, edges, this.infoByBlob, this.declaresText);
     return { graph: { files: snap.code, edges }, unresolved, layer };
   }
 
