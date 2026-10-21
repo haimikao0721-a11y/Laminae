@@ -245,6 +245,48 @@ bash <skill 目录>/scripts/setup.sh                # macOS / Linux
 
 路线图里的 `- [ ]` 清单和代码里的 TODO/FIXME 会作为「线索」单独列出并画数量趋势，但它们只是线索，勾没勾不代表真做没做，不会自动变成想法。
 
+## 分批推测：让 agent 读代码而不是读文档
+
+说法现在只能从文档里来，文档写错整条链就跟着错。这一层让 agent 直接看代码，逐个函数问「它该做什么」。
+
+在目标项目目录下：
+
+```bash
+node <skill dir>/scripts/derive.ts --plan             # 取下一批要看的函数
+node <skill dir>/scripts/derive.ts --accept out.json  # 交结果
+node <skill dir>/scripts/derive.ts --status           # 看进度
+```
+
+`--plan` 写出 `.laminae/derive/batch-<n>.json`，每项带 `file`、`function`、`line`、`why`，以及 **`context`（取证要跑的命令）**。工具的活到这儿为止：挑函数、给命令。
+
+**agent 的活**：对每项跑 `context` 和 `hints` 里的命令，看懂这个函数在做什么，然后交一个结果文件：
+
+```json
+{
+  "batch": 0,
+  "results": [
+    {
+      "id": "<batch 里给的 id>",
+      "text": "这个函数在做什么，一句话",
+      "target": "被检查的路径或文本",
+      "fact": { "type": "path-exists" },
+      "evidence": ["你实际跑过的命令"]
+    }
+  ],
+  "notes": [{ "id": "<id>", "why": "为什么这条写不成可测量的事实" }]
+}
+```
+
+三条硬规矩：
+
+1. **必须带 `evidence`**，写清是跑哪条命令看出来的。没有证据的一律退回。
+2. **`fact` 必须是 12 种事实之一**，和 `ideas.json` 同一套。**表达不成一条能测的事实的，写进 `notes`，不要硬凑。**
+3. 收下的进 `.laminae/ideas.json`，`source` 记成 `inferred:<文件>#<函数>`，和人工写的分开。
+
+**为什么不让你直接下结论**：如果 agent 说「这里没问题」就采信，等于又加了一层不可核对的判断，和这个项目要解决的问题是同一件事。推断可以是模糊的，判定不行。
+
+计划的排序：名字像在算东西（`calc` / `total` / `rate` / `format` …）、被多个文件提到、函数体够长。测试文件里的函数、已经知道是空实现的、名字太通用的（出现在超过 10% 的代码文件里）都不进计划。
+
 ## 对目标项目的影响
 
 - 数仓库的事实只读 git 对象，不检出，不修改任何已跟踪的文件，不改项目自己的 `.gitignore`。`test-passes`、`invariant-holds`、`output-unchanged` 在临时 worktree 里执行你写的命令，不改主工作区。
