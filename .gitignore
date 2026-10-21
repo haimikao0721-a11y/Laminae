@@ -1,0 +1,29 @@
+# laminae 在目标仓库里生成的内容（万一拿本仓库当目标，也不要入库）
+.laminae/
+/laminae.html
+/out/
+
+# 依赖
+node_modules/
+
+# 本地配置与密钥
+.env
+.env.*
+!.env.example
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+*.tmp
+*.bak
+*.tsbuildinfo
+
+# 编辑器与 IDE
+.vscode/
+.idea/
+*.swp
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini

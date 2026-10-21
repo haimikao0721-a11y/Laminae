@@ -1,0 +1,29 @@
+{
+  "name": "laminae",
+  "version": "0.1.0",
+  "private": true,
+  "description": "把「一条说法在每个 commit 上是真是假」存成序列，回答：什么时候开始假的、假了多久；最后是真修好还是改了文档让不一致消失",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haimikao0721-a11y/Laminae.git"
+  },
+  "keywords": [
+    "documentation",
+    "git",
+    "claims",
+    "drift"
+  ],
+  "scripts": {
+    "build:web": "node scripts/build-web.ts",
+    "snapshot": "node scripts/snapshot.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

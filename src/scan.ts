@@ -1,0 +1,226 @@
+/**
+ * laminae —— 逐 commit 扫描代码文件之间的引用（读 git 对象，不检出）
+ *
+ * graph.ts（画引用图）和 ideas.ts（判定「A 不许引用 B」这类边界）共用这一份扫描，
+ * 两边看到的引用关系因此完全一致。
+ *
+ * 省时间的两个办法：
+ *   1. 文件正文用一个常驻的 `git cat-file --batch` 读，而且同一个 blob 只读、只解析一次；
+ *      相邻 commit 绝大多数文件没变，所以每个 commit 只多读几个新文件。
+ *   2. 代码文件与 package.json 完全没变的 commit 直接沿用上一个结果。
+ */
+import { spawn } from "node:child_process";
+import type { ChildProcessByStdio } from "node:child_process";
+import type { Readable, Writable } from "node:stream";
+import { createHash } from "node:crypto";
+import { REPO } from "./config.ts";
+import type { CommitGraph } from "./graph-core.ts";
+import { git } from "./gitutil.ts";
+import { indexPackages, isCodeFile, parseBareSpecs, parseFileImports, resolveBareSpecs, resolvePython, resolveRaw } from "./imports.ts";
+import { isUnsupportedCode } from "./lang.ts";
+import type { RawImport, ResolveEnv } from "./imports.ts";
+import { EMPTY_COMMIT_LAYER, mountRoutes, scanFileLayer } from "./layers-core.ts";
+import type { CommitLayer, FileLayer } from "./layers-core.ts";
+
+/** 常驻的 git cat-file --batch：按 blob 号批量读正文，免得每个文件起一个进程 */
+export class BlobReader {
+  private proc: ChildProcessByStdio<Writable, Readable, null>;
+  private buf: Buffer = Buffer.alloc(0);
+  private wake: (() => void) | null = null;
+  private closed = false;
+
+  constructor() {
+    this.proc = spawn("git", ["-C", REPO, "cat-file", "--batch"], { stdio: ["pipe", "pipe", "ignore"] });
+    this.proc.stdout.on("data", (d: Buffer) => {
+      this.buf = Buffer.concat([this.buf, d]);
+      this.wake?.();
+    });
+    this.proc.on("close", () => {
+      this.closed = true;
+      this.wake?.();
+    });
+    this.proc.stdin.on("error", () => {
+      /* 进程已退出，读取侧会发现 */
+    });
+  }
+
+  private async fill(enough: () => boolean): Promise<void> {
+    while (!enough()) {
+      if (this.closed) throw new Error("git cat-file 意外退出");
+      await new Promise<void>((r) => (this.wake = r));
+    }
+    this.wake = null;
+  }
+
+  async read(oids: string[]): Promise<Map<string, string | null>> {
+    const out = new Map<string, string | null>();
+    for (let i = 0; i < oids.length; i += 200) {
+      const chunk = oids.slice(i, i + 200);
+      this.proc.stdin.write(chunk.join("\n") + "\n");
+      for (const oid of chunk) {
+        await this.fill(() => this.buf.includes(10));
+        const nl = this.buf.indexOf(10);
+        const header = this.buf.subarray(0, nl).toString("utf8");
+        this.buf = this.buf.subarray(nl + 1);
+        if (header.endsWith(" missing")) {
+          out.set(oid, null);
+          continue;
+        }
+        const size = Number(header.split(" ")[2]);
+        await this.fill(() => this.buf.length >= size + 1);
+        out.set(oid, this.buf.subarray(0, size).toString("utf8"));
+        this.buf = this.buf.subarray(size + 1);
+      }
+    }
+    return out;
+  }
+
+  close(): void {
+    this.proc.stdin.end();
+  }
+}
+
+/** 一个 commit 上：文件 → blob 号，以及判断「引用有没有可能变过」的签名 */
+function snapshot(sha: string): { files: Map<string, string>; code: string[]; unsupported: string[]; pkgs: string[]; sig: string } {
+  const out = git(["ls-tree", "-r", sha]) ?? "";
+  const files = new Map<string, string>();
+  const code: string[] = [];
+  const unsupported: string[] = [];
+  const pkgs: string[] = [];
+  const h = createHash("sha1");
+  for (const line of out.split("\n")) {
+    if (!line) continue;
+    const tab = line.indexOf("\t");
+    if (tab < 0) continue;
+    const oid = line.slice(0, tab).split(" ")[2] ?? "";
+    const file = line.slice(tab + 1);
+    files.set(file, oid);
+    if (isCodeFile(file)) {
+      code.push(file);
+      h.update(`${oid}\t${file}\n`);
+    } else if (isUnsupportedCode(file)) {
+      unsupported.push(file);
+      h.update(`${oid}\t${file}\n`);
+    } else if (file === "package.json" || file.endsWith("/package.json")) {
+      pkgs.push(file);
+      h.update(`${oid}\t${file}\n`);
+    }
+  }
+  return { files, code, unsupported, pkgs, sig: h.digest("hex") };
+}
+
+export interface CommitScan {
+  /** 该 commit 上的代码文件与它们之间的引用。代码没变的相邻 commit 共用同一个对象 */
+  graph: CommitGraph;
+  /**
+   * 解析不了、又不像第三方包的引用：[引用方, 引用字符串]。多半是 @/x、src/x 这样的别名路径，
+   * 它们可能指向仓库里的某处，但图上没有这条边。判定边界时要把它们当作「不确定」。
+   */
+  unresolved: readonly (readonly [string, string])[];
+  /** 该 commit 上的全部文件（文件 → blob 号），每个 commit 都是新的 */
+  all: ReadonlyMap<string, string>;
+  /** 空壳、契约与注入线索。代码没变的相邻 commit 共用同一个对象 */
+  layer: CommitLayer;
+}
+
+interface BlobInfo {
+  raw: RawImport[];
+  bare: string[];
+  layer: FileLayer;
+}
+
+export class ImportScanner {
+  private reader = new BlobReader();
+  /** blob 号 → 它里面的引用（只取决于正文，跨 commit 复用） */
+  private infoByBlob = new Map<string, BlobInfo>();
+  /** package.json 的 blob 号 → 正文 */
+  private pkgByBlob = new Map<string, string | null>();
+  private prevSig = "";
+  private prev: { graph: CommitGraph; unresolved: readonly (readonly [string, string])[]; layer: CommitLayer } = {
+    graph: { files: [], edges: [] },
+    unresolved: [],
+    layer: EMPTY_COMMIT_LAYER,
+  };
+
+  /** 有多少个 commit 的代码有变化、一共读了多少个文件正文（给终端摘要用） */
+  scanned = 0;
+  blobsRead = 0;
+
+  async scan(sha: string): Promise<CommitScan> {
+    const snap = snapshot(sha);
+    if (snap.sig !== this.prevSig) {
+      this.prevSig = snap.sig;
+      this.scanned++;
+      const analyzed = snap.code.length === 0 ? { graph: { files: [], edges: [] }, unresolved: [] as [string, string][], layer: { ...EMPTY_COMMIT_LAYER } } : await this.analyze(snap);
+      analyzed.layer.unsupported = snap.unsupported;
+      this.prev = analyzed;
+    }
+    return { graph: this.prev.graph, unresolved: this.prev.unresolved, layer: this.prev.layer, all: snap.files };
+  }
+
+  private async analyze(snap: ReturnType<typeof snapshot>): Promise<{ graph: CommitGraph; unresolved: [string, string][]; layer: CommitLayer }> {
+    const needCode = [...new Set(snap.code.map((f) => snap.files.get(f)!))].filter((o) => !this.infoByBlob.has(o));
+    const needPkg = [...new Set(snap.pkgs.map((f) => snap.files.get(f)!))].filter((o) => !this.pkgByBlob.has(o));
+    const texts = await this.reader.read([...needCode, ...needPkg]);
+    this.blobsRead += texts.size;
+    const kindOf = new Map<string, string>(); // 同一个 blob 号按它的文件扩展名选解析方式
+    for (const f of snap.code) kindOf.set(snap.files.get(f)!, f);
+    for (const o of needCode) {
+      const file = kindOf.get(o)!;
+      const text = texts.get(o) ?? "";
+      this.infoByBlob.set(o, { raw: parseFileImports(file, text), bare: parseBareSpecs(file, text), layer: scanFileLayer(text) });
+    }
+    for (const o of needPkg) this.pkgByBlob.set(o, texts.get(o) ?? null);
+
+    const env: ResolveEnv = { files: new Set(snap.files.keys()), read: (f) => this.pkgByBlob.get(snap.files.get(f) ?? "") ?? null };
+    const pk = indexPackages(snap.pkgs.map((file) => ({ file, body: this.pkgByBlob.get(snap.files.get(file)!) ?? null })));
+
+    const edges: [string, string][] = [];
+    const unresolved: [string, string][] = [];
+    const layer: CommitLayer = { stubs: [], facts: [], declares: [], references: [], clues: [], hollowFns: [], delegates: [] };
+    const pieces: Parameters<typeof mountRoutes>[0][number][] = [];
+    for (const f of snap.code) {
+      const info = this.infoByBlob.get(snap.files.get(f)!);
+      if (!info) continue;
+      pieces.push({
+        file: f,
+        imports: info.layer.imports,
+        routers: info.layer.routers,
+        mounts: info.layer.mounts,
+        declares: info.layer.declares,
+      });
+      // 同一 blob 号、不同扩展名（py 与 js 同内容）几乎不会发生；真发生了解析会得到空而不是错
+      const targets = new Set(resolveRaw(f, info.raw, env));
+      const bare = resolveBareSpecs(info.bare, pk, env);
+      for (const t of bare.targets) if (t !== f) targets.add(t);
+      for (const t of targets) edges.push([f, t]);
+      for (const spec of bare.unknown) unresolved.push([f, spec]);
+      if (info.layer.stub) layer.stubs.push(f);
+      layer.facts.push({
+        file: f,
+        depth: info.layer.depth,
+        trivialFns: info.layer.trivialFns,
+        reexports: info.layer.reexports,
+        forwardTo: info.layer.forwardTo,
+        imports: info.layer.imports,
+      });
+      for (const r of info.layer.references) layer.references.push({ ...r, file: f });
+      for (const kind of info.layer.clues) layer.clues.push({ kind, file: f });
+      for (const h of info.layer.hollowFns) layer.hollowFns!.push({ file: f, name: h.name, line: h.line, reason: h.reason });
+      for (const d of info.layer.delegates) layer.delegates!.push({ file: f, ...d });
+    }
+    layer.declares = mountRoutes(pieces, (from, spec, imported) => resolvePython(from, { spec, names: [imported] }, env)).map((d) => ({
+      kind: "route",
+      name: d.name,
+      file: d.file,
+      handler: d.handler,
+      ...(d.via ? { via: d.via } : {}),
+      ...(d.imported ? { imported: d.imported } : {}),
+    }));
+    return { graph: { files: snap.code, edges }, unresolved, layer };
+  }
+
+  close(): void {
+    this.reader.close();
+  }
+}
