@@ -983,3 +983,23 @@ b.del, .isum b.bad { color: var(--s-false-ink); }
   @page { size: A3 landscape; margin: 10mm; }
 }
 .hint.inexact { color: var(--text); background: color-mix(in srgb, #d99a1b 14%, var(--card)); border-left: 3px solid #d99a1b; padding: 6px 10px; border-radius: 4px; }
+
+/* 规则本身可能写错了的提示。放在图例下面，用黄色而不是红色 —— 这不是「假」，是「没测准」 */
+.rulewarn {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--warn, #d99a2b);
+  background: color-mix(in srgb, var(--warn, #d99a2b) 8%, transparent);
+  border-radius: 4px;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.rulewarn b { font-weight: 600; }
+.rulewarn code {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+.rulewarn div + div { margin-top: 6px; }

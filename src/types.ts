@@ -148,6 +148,17 @@ export interface ClaimTimeline {
   verbatim: string;
   /** HEAD 上原文所在行号，0 表示没找到 */
   line: number;
+  /**
+   * 这条说法的 locator 在整段历史里一次都没匹配到。
+   *
+   * 两种可能：文档确实没写过这句话，或者 locator 写错了。工具分不清，所以不替使用者下结论，
+   * 只把这件事标出来 —— 让人去跑 lookup 看一眼。混进「尚未写入文档」会误导：
+   * 那读起来像「文档没写」，实际可能是「正则写错」。 */
+  ruleMiss: boolean;
+  /**
+   * 引用型说法判假，但把捕获到的文本去掉首尾标点就对得上了。多半是捕获组多带了字符，
+   * 比如 locator 里的反引号被写进了括号内。这里只给提示，不改判定。 */
+  captureHint: string | null;
   /** 文档措辞随时间的变化，行程编码 */
   verbatimRuns: VerbatimRun[];
   /** 每个 commit 一格 */

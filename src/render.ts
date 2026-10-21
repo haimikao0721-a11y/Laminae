@@ -308,6 +308,7 @@ ${payload.layers ? downHtml(payload.layers, payload.commits.length) : ""}
   </div>
 
   <div class="legend" id="legend"></div>
+  <div class="rulewarn" id="rulewarn" hidden></div>
 </section>
 
 <section class="card outcomes" id="outcomes">

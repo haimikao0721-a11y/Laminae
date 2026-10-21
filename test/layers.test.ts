@@ -392,3 +392,38 @@ test("derive：推断必须落成可测量的事实，否则进笔记不进想�
     repo.dispose();
   }
 });
+
+test("说法：locator 从没匹配到标成 ruleMiss，捕获多带字符给出提示", () => {
+  const repo = new TestRepo();
+  try {
+    repo.commit(
+      {
+        "README.md": "# x\n\n共 2 个源文件。\n\n| `docs/help.md` | 帮助 |\n",
+        "src/a.ts": "export const a = 1;\n",
+        "src/b.ts": "export const b = 2;\n",
+        "docs/help.md": "# help\n",
+      },
+      "c0",
+    );
+    writeClaims(repo, [
+      // 反引号写进了捕获组：捕获到的是 docs/help.md`（多一个反引号）
+      { id: "bad-cap", label: "捕获多带字符", file: "README.md", locator: "`(docs/help\\.md`)", fact: { type: "path-exists" } },
+      // 文档里根本没有这句话
+      { id: "never", label: "从没匹配到", file: "README.md", locator: "(这句话文档里没有)", fact: { type: "path-exists" } },
+      { id: "srcs", label: "源文件数", file: "README.md", locator: "共 (\\d+) 个源文件", fact: { type: "count-files", glob: "src/*.ts" } },
+    ]);
+    runLaminae(repo, "scripts/run.ts", ["data"]);
+
+    const payload = JSON.parse(fs.readFileSync(runFile(repo, "payload.json"), "utf8")) as {
+      claims: { id: string; ruleMiss: boolean; captureHint: string | null }[];
+    };
+    const byId = new Map(payload.claims.map((c) => [c.id, c]));
+    assert.equal(byId.get("never")!.ruleMiss, true, "从没匹配到的要标出来，不能只报「尚未写入文档」");
+    assert.equal(byId.get("never")!.captureHint, null);
+    assert.equal(byId.get("bad-cap")!.ruleMiss, false);
+    assert.equal(byId.get("bad-cap")!.captureHint, "docs/help.md", "去掉反引号后文件确实存在，说明多半是捕获组多带了字符");
+    assert.equal(byId.get("srcs")!.ruleMiss, false);
+  } finally {
+    repo.dispose();
+  }
+});
