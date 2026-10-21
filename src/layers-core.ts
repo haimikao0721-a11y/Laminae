@@ -33,9 +33,6 @@ import type { Interval } from "./types.ts";
 export const DEPTHS = ["empty", "unimplemented", "placeholder", "forward", "substantive"] as const;
 export type Depth = (typeof DEPTHS)[number];
 
-/** 顺着调用链最多追几跳。追得越远越不可信，报告按 hops 标置信度 */
-const MAX_CALL_HOPS = 4;
-
 const UNIMPLEMENTED = /not implemented|NotImplementedError|未实现|unimplemented!\(|todo!\(/i;
 
 /** 这个文件看上去是哪种。有实质代码只表示「不是空的、不是纯转发」，不表示真的实现了 */
@@ -83,7 +80,7 @@ const REASON_TEXT: Record<FnReason, string> = {
  *
  * 仍然只记名字，不记参数、不记返回值。名字重复的合并成一条。
  */
-export function delegatedCalls(text: string): { name: string; line: number; callee: string; strict: boolean }[] {
+export function delegatedCalls(text: string): { name: string; line: number; callee: string; strict: boolean; local: boolean }[] {
   const fns = pickModule(text).findFunctions(text);
   if (fns.length === 0) return [];
   const localHollow = new Set(fns.filter((f) => f.reason && f.name).map((f) => f.name!));
@@ -94,7 +91,7 @@ export function delegatedCalls(text: string): { name: string; line: number; call
     "super", "this", "delete", "void", "in", "of", "do", "else", "try", "throw", "yield", "case",
     "def", "elif", "except", "with", "assert", "lambda", "not", "and", "or", "is", "print",
   ]);
-  const out: { name: string; line: number; callee: string; strict: boolean }[] = [];
+  const out: { name: string; line: number; callee: string; strict: boolean; local: boolean }[] = [];
   for (const f of fns) {
     if (!f.name || f.reason) continue;
     const chunk = text.slice(f.start, f.end);
@@ -106,10 +103,12 @@ export function delegatedCalls(text: string): { name: string; line: number; call
     for (const m of body.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)) {
       const callee = m[1]!;
       if (KEYWORDS.has(callee)) continue;
-      if (localAny.has(callee)) continue; // 本文件里的自己会单独判，不跨文件追
+      // 本文件里的名字不在这里追：findFunctions 已经把「函数体只有一句对同文件空实现的调用」
+      // 判成 calls-empty 了，再追一遍会打架。嵌套在 if 里的同文件调用目前仍然看不见，
+      // 这一块要单独做（见 docs/REFERENCE 的已知限制）
       if (seen.has(callee)) continue;
       seen.add(callee);
-      out.push({ name: f.name, line: text.slice(0, f.start).split("\n").length, callee, strict: strict && single?.[1] === callee });
+      out.push({ name: f.name, line: text.slice(0, f.start).split("\n").length, callee, strict: strict && single?.[1] === callee, local: localAny.has(callee) });
     }
   }
   return out;
@@ -388,7 +387,7 @@ export interface CommitLayer {
   clues: ClueHit[];
   /** 具名函数里往下看一层有问题的，带定义所在行 */
   hollowFns?: { file: string; name: string; line: number; reason: FnReason }[];
-  delegates?: { file: string; name: string; line: number; callee: string }[];
+  delegates?: { file: string; name: string; line: number; callee: string; local?: boolean }[];
   /** 认得出扩展名、但没有语法模块的文件，如 .java、.go */
   unsupported?: string[];
   /** 没有 import 边，但文件名在别的文件正文里作为字面量出现过（按约定加载）。不算孤立 */
@@ -617,31 +616,53 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
     // 跳数有上限，不需要额外的去重集合：环最多转到 MAX_CALL_HOPS 就停，mark 本身幂等。
     // 之前加过一个「已访问」集合，结果第一跳就把还没追到的项记成访问过，第二跳直接跳过，
     // 整条链反而断了。
-    let pending: { file: string; name: string; line: number; callee: string; strict?: boolean }[] = [
-      ...(c.layer.delegates ?? []),
-    ];
-    for (let hop = 1; hop <= MAX_CALL_HOPS && pending.length > 0; hop++) {
-      const next: typeof pending = [];
-      for (const d of pending) {
-        const binding = (factDepth.get(d.file)?.imports ?? []).find((b) => b.local === d.callee);
-        if (!binding) continue;
-        const target = resolveRel(d.file, binding.spec, filesNow);
-        const reason = target ? hollowAt.get(target)?.get(binding.imported) : undefined;
-        if (!target || !reason) {
-          // 还没追到：下一跳再试。已经到最后一跳就不必了
-          if (hop < MAX_CALL_HOPS) next.push(d);
-          continue;
+    // 顺着调用链一直追到底，不设深度上限。
+    //
+    // 用「已访问」集合保证终止：环会转回来，转回来就跳过，所以不需要一个拍出来的上限。
+    // 距离记的是真实链长：空实现本身算 0，直接调用它的是 1，再往上加一。
+    // 之前记的是「第几轮追到的」，同一轮里靠后的项会少算一跳，链越长偏得越多。
+    //
+    // 文件内的调用（d.local）不查 import，直接就是本文件的函数 —— 原来这一类被整个丢掉了，
+    // 于是「函数调用路径」只覆盖跨文件那一半。
+    const dist = new Map<string, number>();
+    for (const [file, byName] of hollowAt) for (const name of byName.keys()) dist.set(`${file}\u0000${name}`, 0);
+    const visitedCall = new Set<string>();
+    const calls = c.layer.delegates ?? [];
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      for (const d of calls) {
+        const visit = `${d.file}\u0000${d.name}\u0000${d.callee}`;
+        if (visitedCall.has(visit)) continue;
+        let target: string | null;
+        let imported: string;
+        if (d.local === true) {
+          target = d.file;
+          imported = d.callee;
+        } else {
+          const binding = (factDepth.get(d.file)?.imports ?? []).find((b) => b.local === d.callee);
+          if (!binding) continue;
+          target = resolveRel(d.file, binding.spec, filesNow);
+          imported = binding.imported;
         }
+        if (!target) continue;
+        const d0 = dist.get(`${target}\u0000${imported}`);
+        if (d0 === undefined) continue;
+        visitedCall.add(visit);
+        const hops = d0 + 1;
         const key = `${d.file}\u0000${d.name}\0calls-other`;
         mark(downFlags, key, i);
         downLine.set(key, d.line);
-        downVia.set(key, `${target}:${binding.imported}`);
-        downHops.set(key, hop);
+        downVia.set(key, `${target}:${imported}`);
+        downHops.set(key, hops);
+        const self = `${d.file}\u0000${d.name}`;
+        const prev = dist.get(self);
+        if (prev === undefined || prev > hops) dist.set(self, hops);
         let byName = hollowAt.get(d.file);
         if (!byName) hollowAt.set(d.file, (byName = new Map()));
         byName.set(d.name, "calls-other");
+        progressed = true;
       }
-      pending = next;
     }
 
     const byKind = (hits: readonly ContractHit[]): Map<string, ContractHit[]> => {
