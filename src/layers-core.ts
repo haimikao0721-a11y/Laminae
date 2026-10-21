@@ -17,6 +17,9 @@
  */
 import { isTestFile, resolveJs } from "./imports.ts";
 import type { ResolveEnv } from "./imports.ts";
+import { codeLines, isNonCodeLine, normRoute } from "./syntax.ts";
+import type { Binding, FnReason, HandlerKind, PyMount, PyRouter, RouteDecl } from "./syntax.ts";
+import { MODULES, allBindings, allMounts, allRouters, allRoutes, pickModule } from "./syntax-registry.ts";
 import type { Interval } from "./types.ts";
 
 /**
@@ -31,163 +34,6 @@ export const DEPTHS = ["empty", "unimplemented", "placeholder", "forward", "subs
 export type Depth = (typeof DEPTHS)[number];
 
 const UNIMPLEMENTED = /not implemented|NotImplementedError|未实现|unimplemented!\(|todo!\(/i;
-const TRIVIAL_EXPR = /^(?:null|undefined|None|false|true|0|\[\]|\{\}|""|'')$|^-?\d+(?:\.\d+)?$/;
-
-const stripComments = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\n)\s*(\/\/|#)[^\n]*/g, "$1");
-
-const codeLines = (text: string): string[] =>
-  stripComments(text)
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-function trivialBody(body: string): boolean {
-  const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (lines.length === 0) return true;
-  return lines.every((l) => {
-    if (l === "pass" || l === "..." || l === "return") return true;
-    const m = /^return\s+([\s\S]*?);?$/.exec(l);
-    return m !== null && TRIVIAL_EXPR.test(m[1]!.trim());
-  });
-}
-
-function skipString(text: string, i: number): number {
-  const q = text[i]!;
-  i++;
-  while (i < text.length) {
-    if (text[i] === "\\") {
-      i += 2;
-      continue;
-    }
-    if (text[i] === q) return i;
-    if (q === "`" && text[i] === "$" && text[i + 1] === "{") {
-      i += 2;
-      let d = 1;
-      while (i < text.length && d > 0) {
-        if (text[i] === "{") d++;
-        else if (text[i] === "}") d--;
-        i++;
-      }
-      continue;
-    }
-    i++;
-  }
-  return i;
-}
-
-/** 从 open 处的 `(` 读到配对的 `)`，跳过字符串和行注释。读不到返回空串 */
-function readParen(text: string, open: number): string {
-  if (text[open] !== "(") return "";
-  let d = 0;
-  for (let i = open; i < text.length && i < open + 2000; i++) {
-    const c = text[i]!;
-    if (c === "(") d++;
-    else if (c === ")") {
-      d--;
-      if (d === 0) return text.slice(open + 1, i);
-    } else if (c === "#") {
-      const nl = text.indexOf("\n", i);
-      i = nl < 0 ? text.length : nl;
-    } else if (c === "'" || c === '"' || c === "`") i = skipString(text, i);
-  }
-  return "";
-}
-
-function matchBrace(text: string, open: number): number {
-  let d = 0;
-  for (let i = open; i < text.length; i++) {
-    const c = text[i]!;
-    if (c === "{") d++;
-    else if (c === "}") {
-      d--;
-      if (d === 0) return i;
-    } else if (c === "'" || c === '"' || c === "`") i = skipString(text, i);
-  }
-  return -1;
-}
-
-export type FnReason = "empty" | "return-const" | "unimplemented" | "calls-empty" | "calls-other";
-
-interface FoundFn {
-  name: string | null;
-  /** 这个函数本身有问题；null 表示看着有实现 */
-  reason: FnReason | null;
-  start: number;
-  end: number;
-}
-
-function bodyReason(body: string): FnReason | null {
-  const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (lines.length === 0) return "empty";
-  const unimplemented = (l: string): boolean => /not implemented|NotImplementedError|未实现|unimplemented!|todo!/i.test(l);
-  if (lines.every((l) => unimplemented(l) || l === "pass" || l === "..." || /^raise\s+NotImplementedError\b/.test(l))) {
-    return lines.some(unimplemented) ? "unimplemented" : "empty";
-  }
-  if (trivialBody(body)) return "return-const";
-  return null;
-}
-
-/** 有名字的函数，以及它的函数体是不是空的。匿名函数也收，名字为 null */
-function findFunctions(text: string): FoundFn[] {
-  const out: FoundFn[] = [];
-  const re =
-    /(?:export\s+default\s+|export\s+)?(?:async\s+)?function\s*([A-Za-z_$][\w$]*)?\s*\([^)]*\)\s*\{|(?:export\s+default\s+|export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:function\s*\([^)]*\)|\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{|(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const brace = m.index + m[0].length - 1;
-    if (text[brace] !== "{") continue;
-    const end = matchBrace(text, brace);
-    if (end < 0) {
-      re.lastIndex = brace + 1;
-      continue;
-    }
-    const reason = bodyReason(text.slice(brace + 1, end));
-    out.push({ name: m[1] ?? m[2] ?? null, reason, start: m.index, end: end + 1 });
-    re.lastIndex = end + 1;
-  }
-  // 没有花括号的箭头函数：const f = () => null
-  const expr = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*([^;{\n]+)/g;
-  while ((m = expr.exec(text))) {
-    out.push({ name: m[1] ?? null, reason: TRIVIAL_EXPR.test(m[2]!.trim()) ? "return-const" : null, start: m.index, end: m.index + m[0].length });
-  }
-  // 只再追一跳：函数体如果只是 return 另一个空函数，自己也算空的。不跨文件
-  const hollowNames = new Set(out.filter((f) => f.reason && f.name).map((f) => f.name!));
-  for (const f of out) {
-    if (f.reason) continue;
-    const src = text.slice(f.start, f.end);
-    const body = /\{([\s\S]*)\}/.exec(src)?.[1] ?? "";
-    const call = /^\s*return\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*;?\s*$/.exec(body.trim());
-    if (call && hollowNames.has(call[1]!)) f.reason = "calls-empty";
-  }
-  return out;
-}
-
-function findPythonFunctions(text: string): FoundFn[] {
-  const lines = text.split("\n");
-  const out: FoundFn[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const head = /^([ \t]*)def\s+([A-Za-z_][\w]*)\s*\([^)]*\)\s*:/.exec(lines[i]!);
-    if (!head) continue;
-    const indent = head[1]!.length;
-    const body: string[] = [];
-    let j = i + 1;
-    for (; j < lines.length; j++) {
-      const line = lines[j]!;
-      if (line.trim() === "") continue;
-      if (/^[ \t]*/.exec(line)![0].length <= indent) break;
-      body.push(line);
-    }
-    const start = lines.slice(0, i).join("\n").length + (i === 0 ? 0 : 1);
-    const end = lines.slice(0, j).join("\n").length;
-    out.push({ name: head[2]!, reason: bodyReason(body.join("\n")), start, end });
-    i = j - 1;
-  }
-  return out;
-}
-
-const isJsForwardLine = (l: string): boolean => /^(?:import|export)\s/.test(l);
-const isExportFromLine = (l: string): boolean => /^export\s+(?:\*|\{)/.test(l) && /\bfrom\s+['"]/.test(l);
-const isPyForwardLine = (l: string): boolean => /^from\s+\./.test(l) || /^import\s+\./.test(l);
 
 /** 这个文件看上去是哪种。有实质代码只表示「不是空的、不是纯转发」，不表示真的实现了 */
 export function classifyDepth(text: string): Depth {
@@ -202,14 +48,17 @@ export function classifyDepth(text: string): Depth {
   }
   const lines = codeLines(text);
   if (lines.length === 0) return "empty";
-  if (lines.every(isJsForwardLine) && lines.some(isExportFromLine)) return "forward";
-  if (lines.every(isPyForwardLine)) return "forward";
+  // 纯转发是整份文件的形状，不依赖于认出哪门语言，所以两个模块都问一遍。
+  // 原来就是「JS 的纯转发成立，或者 Python 的纯转发成立」。
+  if (MODULES.some((m) => m.isPureForward(lines, text))) return "forward";
 
-  const fns = findPythonFunctions(text).length > 0 && !/(?:function\s*\(|=>)/.test(text) ? findPythonFunctions(text) : findFunctions(text);
+  // 从这里往下才需要知道是哪门语言，取一次模块，后面都调它
+  const mod = pickModule(text);
+  const fns = mod.findFunctions(text);
   if (fns.length === 0 || fns.some((f) => !f.reason)) return "substantive";
   let rest = text;
   for (const f of [...fns].sort((a, b) => b.start - a.start)) rest = rest.slice(0, f.start) + rest.slice(f.end);
-  const left = codeLines(rest).filter((l) => !isJsForwardLine(l) && !isPyForwardLine(l) && !/^export\b/.test(l));
+  const left = codeLines(rest).filter((l) => !isNonCodeLine(l));
   return left.length === 0 ? "placeholder" : "substantive";
 }
 
@@ -224,8 +73,7 @@ const REASON_TEXT: Record<FnReason, string> = {
 /** 具名函数里，往下看一层有问题的那些。行号是函数定义那一行。不把整个文件算进去 */
 /** 函数体只有一句对别的名字的调用，而且那个名字不是本文件里已经有问题的函数。跨文件要靠 import 再追 */
 export function delegatedCalls(text: string): { name: string; line: number; callee: string }[] {
-  const py = findPythonFunctions(text);
-  const fns = py.length > 0 && !/(?:function\s*\(|=>)/.test(text) ? py : findFunctions(text);
+  const fns = pickModule(text).findFunctions(text);
   const local = new Set(fns.filter((f) => f.reason && f.name).map((f) => f.name!));
   const out: { name: string; line: number; callee: string }[] = [];
   for (const f of fns) {
@@ -240,8 +88,7 @@ export function delegatedCalls(text: string): { name: string; line: number; call
 }
 
 export function hollowFunctions(text: string): { name: string; line: number; reason: FnReason }[] {
-  const py = findPythonFunctions(text);
-  const fns = py.length > 0 && !/(?:function\s*\(|=>)/.test(text) ? py : findFunctions(text);
+  const fns = pickModule(text).findFunctions(text);
   return fns.flatMap((f) =>
     f.name && f.reason ? [{ name: f.name, line: text.slice(0, f.start).split("\n").length, reason: f.reason }] : [],
   );
@@ -253,185 +100,6 @@ export { REASON_TEXT };
 export function isStub(text: string): boolean {
   const d = classifyDepth(text);
   return d === "empty" || d === "unimplemented";
-}
-
-export interface Binding {
-  local: string;
-  imported: string;
-  spec: string;
-}
-
-function parseBindings(text: string, kind: "import" | "export"): Binding[] {
-  const out: Binding[] = [];
-  const re = new RegExp(`${kind}\\s+(?:type\\s+)?\\{([^}]+)\\}\\s+from\\s*(['"])([^'"]+)\\2`, "g");
-  for (const m of text.matchAll(re)) {
-    for (const part of m[1]!.split(",")) {
-      const mm = /([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?/.exec(part.trim());
-      if (!mm) continue;
-      out.push({ imported: mm[1]!, local: mm[2] ?? mm[1]!, spec: m[3]! });
-    }
-  }
-  if (kind === "export") {
-    for (const m of text.matchAll(/export\s+\*\s+from\s*(['"])([^'"]+)\1/g)) out.push({ imported: "*", local: "*", spec: m[2]! });
-  } else {
-    for (const m of text.matchAll(/import\s+([A-Za-z_$][\w$]*)\s+from\s*(['"])([^'"]+)\2/g)) {
-      out.push({ imported: "default", local: m[1]!, spec: m[3]! });
-    }
-    for (const m of text.matchAll(/^\s*from\s+(\S+)\s+import\s+(.+)$/gm)) {
-      for (const part of m[2]!.split(",")) {
-        const mm = /^([A-Za-z_][\w]*)(?:\s+as\s+([A-Za-z_][\w]*))?/.exec(part.trim());
-        if (!mm) continue;
-        out.push({ imported: mm[1]!, local: mm[2] ?? mm[1]!, spec: m[1]! });
-      }
-    }
-  }
-  return out;
-}
-
-export type HandlerKind = "trivial" | "substantive" | "missing";
-
-export interface RouteDecl {
-  name: string;
-  handler: HandlerKind;
-  via?: string;
-  imported?: string;
-  /** Python 装饰器挂在哪个变量上。路径还是装饰器上的那一段，前缀在 mountRoutes 里拼 */
-  router?: string;
-}
-
-export interface PyRouter {
-  local: string;
-  /** APIRouter / FastAPI 的 prefix，没有就是空串 */
-  prefix: string;
-}
-
-export interface PyMount {
-  /** 调用 include_router 的那个变量，例如 app */
-  parent: string;
-  /** 被挂上的变量。module.router 时这是 module */
-  local: string;
-  prefix: string;
-  /** module.router 里点后面的名字 */
-  attr?: string;
-}
-
-function readHandlerArg(text: string, i: number): string {
-  let d = 0;
-  let j = i;
-  while (j < text.length) {
-    const c = text[j]!;
-    if (c === "(" || c === "{" || c === "[") d++;
-    else if (c === ")" || c === "}" || c === "]") {
-      if (d === 0 && c === ")") return text.slice(i, j);
-      d--;
-    } else if (d === 0 && c === ",") return text.slice(i, j);
-    else if (c === "'" || c === '"' || c === "`") j = skipString(text, j);
-    j++;
-  }
-  return text.slice(i);
-}
-
-function classifyHandler(arg: string, fns: Map<string, boolean>, imports: readonly Binding[]): Pick<RouteDecl, "handler" | "via" | "imported"> {
-  const a = arg.trim();
-  const named = /^([A-Za-z_$][\w$]*)$/.exec(a);
-  if (named) {
-    const n = named[1]!;
-    if (fns.has(n)) return { handler: fns.get(n) ? "trivial" : "substantive" };
-    const imp = imports.find((b) => b.local === n);
-    return imp ? { handler: "missing", via: imp.spec, imported: imp.imported } : { handler: "missing" };
-  }
-  const brace = a.indexOf("{");
-  const arrow = a.indexOf("=>");
-  if (brace >= 0 && (arrow < 0 || brace > arrow)) {
-    const open = a.indexOf("{");
-    const close = matchBrace(a, open);
-    return { handler: trivialBody(close < 0 ? "" : a.slice(open + 1, close)) ? "trivial" : "substantive" };
-  }
-  if (arrow >= 0) {
-    const expr = a.slice(arrow + 2).trim().replace(/;$/, "");
-    return { handler: TRIVIAL_EXPR.test(expr) || expr === "" ? "trivial" : "substantive" };
-  }
-  return { handler: "substantive" };
-}
-
-function parseRoutes(text: string): RouteDecl[] {
-  const fns = new Map<string, boolean>();
-  for (const f of [...findFunctions(text), ...findPythonFunctions(text)]) if (f.name) fns.set(f.name, f.reason !== null);
-  const imports = parseBindings(text, "import");
-  const out: RouteDecl[] = [];
-  const seen = new Set<string>();
-  const add = (name: string, handler: Pick<RouteDecl, "handler" | "via" | "imported">, router?: string): void => {
-    const key = `${router ?? ""}\0${name}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(router ? { name, ...handler, router } : { name, ...handler });
-  };
-
-  const js = /(?<!(?:axios|got|superagent|request|https?|client))\.\s*(?:get|post|put|delete|patch|route)\s*\(\s*(['"`])(\/[^\s'"`]{0,119})\1/g;
-  for (const m of text.matchAll(js)) {
-    const name = normRoute(m[2] ?? "");
-    if (name === "" || name.includes("$") || name.includes("{")) continue;
-    const after = m.index! + m[0].length;
-    const comma = /^\s*,\s*/.exec(text.slice(after));
-    if (!comma) continue;
-    const arg = readHandlerArg(text, after + comma[0].length);
-    add(name, classifyHandler(arg, fns, imports));
-  }
-
-  const nest = /@(?:Get|Post|Put|Delete|Patch)\s*\(\s*(['"`])(\/[^\s'"`]{0,119})\1/g;
-  for (const m of text.matchAll(nest)) {
-    const name = normRoute(m[2] ?? "");
-    if (name === "" || name.includes("$") || name.includes("{")) continue;
-    const after = m.index! + m[0].length;
-    const brace = text.indexOf("{", after);
-    if (brace < 0 || brace - after > 240) {
-      add(name, { handler: "missing" });
-      continue;
-    }
-    const close = matchBrace(text, brace);
-    const body = close < 0 ? "" : text.slice(brace + 1, close);
-    add(name, { handler: trivialBody(body) ? "trivial" : "substantive" });
-  }
-
-  const py = /@(?:([A-Za-z_]\w*)\.)?(?:route|get|post|put|delete|patch)\s*\(\s*(['"])(\/[^\s'"]{0,119})\2/g;
-  for (const m of text.matchAll(py)) {
-    const name = normRoute(m[3] ?? "");
-    if (name === "") continue;
-    const rest = text.slice(m.index! + m[0].length);
-    const def = /\bdef\s+([A-Za-z_][\w]*)\s*\(/.exec(rest);
-    const trivial = def ? fns.get(def[1]!) === true : false;
-    const known = def ? fns.has(def[1]!) : false;
-    add(name, { handler: !known ? "missing" : trivial ? "trivial" : "substantive" }, m[1] || undefined);
-  }
-  return out;
-}
-
-/** `name = APIRouter(prefix="...")` / `FastAPI(...)`。prefix 不是字符串字面量的记成空串 */
-export function parsePyRouters(text: string): PyRouter[] {
-  const out: PyRouter[] = [];
-  const re = /([A-Za-z_]\w*)\s*=\s*(?:APIRouter|FastAPI)\s*\(/g;
-  for (const m of text.matchAll(re)) {
-    const args = readParen(text, m.index! + m[0].length - 1);
-    const prefix = /prefix\s*=\s*(['"])(\/[^'"]*)\1/.exec(args)?.[2] ?? "";
-    out.push({ local: m[1]!, prefix });
-  }
-  return out;
-}
-
-/** `app.include_router(router, prefix="/api")`，也认 `app.include_router(users.router, prefix=...)` */
-export function parsePyMounts(text: string): PyMount[] {
-  const out: PyMount[] = [];
-  const re = /([A-Za-z_]\w*)\.include_router\s*\(/g;
-  for (const m of text.matchAll(re)) {
-    const args = readParen(text, m.index! + m[0].length - 1);
-    const target = /^\s*([A-Za-z_]\w*)(?:\.([A-Za-z_]\w*))?/.exec(args);
-    if (!target) continue;
-    const prefix = /prefix\s*=\s*(['"])(\/[^'"]*)\1/.exec(args)?.[2] ?? "";
-    const mount: PyMount = { parent: m[1]!, local: target[1]!, prefix };
-    if (target[2]) mount.attr = target[2];
-    out.push(mount);
-  }
-  return out;
 }
 
 const ENTRY_NAME = /^(index|main|cli|app|server|mod|__init__|__main__|setup)$/;
@@ -471,11 +139,6 @@ export interface FileLayer {
 const ROUTE_REF_FETCH = /\bfetch\s*\(\s*(['"`])(\/[^\s'"`]{0,119})\1/g;
 const ROUTE_REF_AXIOS = /\baxios\s*\.\s*(?:get|post|put|delete|patch)\s*\(\s*(['"`])(\/[^\s'"`]{0,119})\1/g;
 
-/** 去掉查询串、hash 和结尾的 /，让声明和引用对得上 */
-const normRoute = (p: string): string => {
-  const cut = p.split(/[?#]/)[0] ?? "";
-  return cut.length > 1 ? cut.replace(/\/+$/, "") : cut;
-};
 
 function joinRoute(prefix: string, path: string): string {
   const head = normRoute(prefix);
@@ -637,26 +300,28 @@ export function scanFileLayer(text: string): FileLayer {
     return [...out];
   };
 
+  // 取一次模块，整个文件都问它。原来是每处调用点各自猜一遍语言
+  const mod = pickModule(text);
   const depth = classifyDepth(text);
-  const reexports = parseBindings(text, "export");
+  const reexports = allBindings(text, "export");
   const forwardTo =
     depth === "forward"
-      ? [...new Set([...reexports.map((r) => r.spec), ...parseBindings(text, "import").map((b) => b.spec).filter((s) => s.startsWith("."))])]
+      ? [...new Set([...reexports.map((r) => r.spec), ...allBindings(text, "import").map((b) => b.spec).filter((s) => s.startsWith("."))])]
       : [];
   return {
     stub: depth === "empty" || depth === "unimplemented",
     depth,
     hollowFns: hollowFunctions(text),
-    imports: parseBindings(text, "import"),
+    imports: allBindings(text, "import"),
     delegates: delegatedCalls(text),
-    trivialFns: [...findFunctions(text), ...findPythonFunctions(text)].flatMap((f) => (f.name && f.reason ? [f.name] : [])),
+    trivialFns: mod.findFunctions(text).flatMap((f) => (f.name && f.reason ? [f.name] : [])),
     forwardTo,
     reexports,
-    declares: parseRoutes(text).map((r) => ({ kind: "route", ...r })),
+    declares: allRoutes(text).map((r) => ({ kind: "route", ...r })),
     references: [...names(ROUTE_REF_FETCH), ...names(ROUTE_REF_AXIOS)].map((name) => ({ kind: "route", name })),
     clues: CLUE_PATTERNS.filter(([, re]) => re.test(text)).map(([kind]) => kind),
-    routers: parsePyRouters(text),
-    mounts: parsePyMounts(text),
+    routers: allRouters(text),
+    mounts: allMounts(text),
   };
 }
 
