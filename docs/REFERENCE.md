@@ -100,7 +100,7 @@
 
 ### 调用关系图的限制
 
-- 只做模块级 import，JS/TS（`import`、`require`、动态 `import()`、`export … from`）与 Python（`import`、`from … import`）。Java、Go、Rust、C# 以及其他语言都不认（扩展方式见 [LANGUAGES.md](LANGUAGES.md)）：扩展名不在 `.js` / `.ts` / `.jsx` / `.tsx` / `.mjs` / `.cjs` / `.py` 里的文件，不会被当成代码。
+- 只做模块级 import，JS/TS（`import`、`require`、动态 `import()`、`export … from`）与 Python（`import`、`from … import`）。Java、Go、C# 以及其他语言都不认（扩展方式见 [LANGUAGES.md](LANGUAGES.md)）。Rust 从 0.2 起有语法模块：扩展名不在 `.js` / `.ts` / `.jsx` / `.tsx` / `.mjs` / `.cjs` / `.py` 里的文件，不会被当成代码。
 - 没有函数级调用图。
 - Python 多行的 `from x import (\n a,\n b)` 只读到第一行的名字。
 - 注释或字符串里长得像 import 的文本可能产生多余的边。

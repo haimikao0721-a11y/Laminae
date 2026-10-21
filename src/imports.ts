@@ -36,11 +36,64 @@ export interface RawImport {
 /** 从一行代码里取出引用。认不出来返回 null。file 决定按哪种语言解析 */
 export function parseImportLine(file: string, line: string): RawImport[] | null {
   if (file.endsWith(".py")) return parsePython(line);
+  if (file.endsWith(".rs")) return parseRust(line);
   // 去掉行内注释前的内容太麻烦，直接找引号里以 . 开头的路径；注释里的引用会被当成引用，这是已知的小误差
   const out: RawImport[] = [];
   const re = /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}(?:\/[^'"]*)?)\1/g;
   for (const m of line.matchAll(re)) out.push({ spec: m[2]! });
   return out.length ? out : null;
+}
+
+/** Rust 的 use 与 mod。只认 crate:: / super:: / self:: 开头，外部 crate 不解析 */
+function parseRust(line: string): RawImport[] | null {
+  const s = line.replace(/\/\/.*$/, "").trim();
+  const mod = /^(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;/.exec(s);
+  if (mod) return [{ spec: `self::${mod[1]!}` }];
+  const use = /^(?:pub(?:\([^)]*\))?\s+)?use\s+([A-Za-z_][\w:]*)/.exec(s);
+  if (!use) return null;
+  const spec = use[1]!;
+  return /^(?:crate|super|self)::/.test(spec) ? [{ spec }] : null;
+}
+
+/** 这个文件所属 crate 的 src 目录；找不到返回 null */
+function crateRoot(file: string): string | null {
+  const segs = file.split("/");
+  const i = segs.lastIndexOf("src");
+  return i < 0 ? null : segs.slice(0, i + 1).join("/");
+}
+
+/** 这个文件对应的模块路径（相对 crate 根）。lib.rs / main.rs / mod.rs 是所在目录本身 */
+function modulePath(file: string, root: string): string[] {
+  const parts = file.slice(root.length + 1).split("/");
+  const stem = (parts.pop() ?? "").replace(/\.rs$/, "");
+  return stem === "mod" || stem === "lib" || stem === "main" ? parts : [...parts, stem];
+}
+
+/**
+ * Rust 的模块路径解析：`crate::a::b` 从 src 往下找 `a/b.rs` 或 `a/b/mod.rs`。
+ * `super::` 往上一层，`self::` 是当前模块。从最长的一段往回退，命中第一个存在的就停
+ * —— `use a::b::C` 里的 C 是条目不是模块。
+ */
+export function resolveRust(from: string, spec: string, env: ResolveEnv): string[] {
+  const root = crateRoot(from);
+  if (root === null) return [];
+  const cur = modulePath(from, root);
+  const parts = spec.split("::").filter(Boolean);
+  let base: string[];
+  if (parts[0] === "crate") base = parts.slice(1);
+  else if (parts[0] === "super") base = [...cur.slice(0, -1), ...parts.slice(1)];
+  else if (parts[0] === "self") base = [...cur, ...parts.slice(1)];
+  else return [];
+  for (let n = base.length; n >= 0; n--) {
+    const rel = base.slice(0, n).join("/");
+    const candidates =
+      rel === ""
+        ? [`${root}/lib.rs`, `${root}/main.rs`, `${root}/mod.rs`]
+        : [`${root}/${rel}.rs`, `${root}/${rel}/mod.rs`];
+    const hit = candidates.filter((c) => env.files.has(c) && c !== from);
+    if (hit.length > 0) return hit;
+  }
+  return [];
 }
 
 function parsePython(line: string): RawImport[] | null {
@@ -190,7 +243,11 @@ export function resolveImports(from: string, line: string, env: ResolveEnv): str
 export function resolveRaw(from: string, raws: readonly RawImport[], env: ResolveEnv): string[] {
   const out = new Set<string>();
   for (const r of raws) {
-    const targets = from.endsWith(".py") ? resolvePython(from, r, env) : [resolveJs(from, r.spec, env)];
+    const targets = from.endsWith(".py")
+      ? resolvePython(from, r, env)
+      : from.endsWith(".rs")
+        ? resolveRust(from, r.spec, env)
+        : [resolveJs(from, r.spec, env)];
     for (const t of targets) if (t && t !== from && isCodeFile(t)) out.add(t);
   }
   return [...out];

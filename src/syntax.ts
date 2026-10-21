@@ -213,7 +213,7 @@ export function classifyHandler(
  * 别的语言可以不实现，调用侧按空数组处理。
  */
 export interface SyntaxModule {
-  readonly id: "js" | "py";
+  readonly id: "js" | "py" | "rs";
 
   /** 这段文本像不像这门语言。只在 pickModule 里调用 */
   looksLike(text: string): boolean;

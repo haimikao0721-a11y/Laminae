@@ -10,8 +10,8 @@
 
 | 类别 | 扩展名 | 会做什么 |
 |---|---|---|
-| 支持的语法模块 | `.js .ts .jsx .tsx .mjs .cjs .mts .cts`、`.py` | 解析引用、建图、判假实现、判路由 |
-| 认得出但没语法模块 | `.java .go .rs .cs .c .cc .cpp .h .hpp .kt .kts .swift .rb .php .scala .m .mm` | 列在「语法还没有模块」里，不进引用图，不判假实现 |
+| 支持的语法模块 | `.js .ts .jsx .tsx .mjs .cjs .mts .cts`、`.py`、`.rs` | 解析引用、建图、判假实现、判路由（Rust 暂无路由） |
+| 认得出但没语法模块 | `.java .go .cs .c .cc .cpp .h .hpp .kt .kts .swift .rb .php .scala .m .mm` | 列在「语法还没有模块」里，不进引用图，不判假实现 |
 | 不当成代码 | 其余 | 完全忽略 |
 
 **这个区分是有意的。** 认得出扩展名却硬猜结构，会产生假的引用边和假的「假实现」判定——比不判更糟。
