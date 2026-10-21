@@ -245,6 +245,48 @@ References that can be resolved: relative paths, and internal packages in a mono
 
 The `- [ ]` checklists in a roadmap and the TODO/FIXME in code are listed separately as "leads" and a count trend is drawn for them, but they are only leads: a tick does not mean it was really done, and they do not become ideas automatically.
 
+## Batched inference: read the code, not the documentation
+
+Claims can only come from documents today, so a wrong document poisons the whole chain. This layer lets an agent look at the code directly and ask, function by function, what it is supposed to do.
+
+Run inside the target project:
+
+```bash
+node <skill dir>/scripts/derive.ts --plan             # take the next batch of functions
+node <skill dir>/scripts/derive.ts --accept out.json  # hand back results
+node <skill dir>/scripts/derive.ts --status           # show progress
+```
+
+`--plan` writes `.laminae/derive/batch-<n>.json`. Each item carries `file`, `function`, `line`, `why`, and **`context`, the command to run for evidence**. That is where the tool stops: it picks the functions and hands out the commands.
+
+**The agent's job**: run `context` and the commands in `hints`, work out what the function does, and hand back a result file:
+
+```json
+{
+  "batch": 0,
+  "results": [
+    {
+      "id": "<the id given in the batch>",
+      "text": "what this function does, in one sentence",
+      "target": "the path or text being checked",
+      "fact": { "type": "path-exists" },
+      "evidence": ["the commands you actually ran"]
+    }
+  ],
+  "notes": [{ "id": "<id>", "why": "why this one cannot be expressed as a measurable fact" }]
+}
+```
+
+Three hard rules:
+
+1. **`evidence` is mandatory**: state which command you ran to see it. Anything without evidence is rejected.
+2. **`fact` must be one of the twelve fact types**, the same set `ideas.json` uses. **If it cannot be expressed as something measurable, put it in `notes`; do not force it.**
+3. Accepted results go into `.laminae/ideas.json` with `source` set to `inferred:<file>#<function>`, so they stay distinguishable from hand-written ones.
+
+**Why you may not simply state a conclusion**: if the agent says "nothing wrong here" and that is taken at face value, you have added another layer of unverifiable judgement, which is the very problem this project exists to address. Inference may be fuzzy. Judgement may not.
+
+How the plan is ordered: names that look like computation (`calc` / `total` / `rate` / `format` …), mentioned by several files, long enough bodies. Functions in test files, ones already known to be empty, and names too generic to mean anything (present in more than 10% of code files) never enter the plan.
+
 ## Impact on the target project
 
 - Repository-counting facts read only git objects; nothing is checked out, no tracked file is modified, and the project's own `.gitignore` is not touched. `test-passes`, `invariant-holds`, and `output-unchanged` run the commands you wrote in a temporary worktree and do not modify the main working tree.

@@ -330,3 +330,52 @@ test("端到端：空壳支撑、对不上的路由、孤立模块都进到报�
     repo.dispose();
   }
 });
+
+test("derive：推断必须落成可测量的事实，否则进笔记不进想法", () => {
+  const repo = new TestRepo();
+  try {
+    repo.commit(
+      {
+        "README.md": "# x\n\n共 1 个源文件。\n",
+        "src/calc.ts": "export function calcBonus(base: number) {\n  const doubled = base * 2;\n  const bumped = doubled + 1;\n  return bumped;\n}\n",
+      },
+      "c0",
+    );
+    writeClaims(repo, [
+      { id: "srcs", label: "源文件数", file: "README.md", locator: "共 (\\d+) 个源文件", fact: { type: "count-files", glob: "src/*.ts" } },
+    ]);
+
+    runLaminae(repo, "scripts/derive.ts", ["--plan", "--size", "1"]);
+    const batch = JSON.parse(fs.readFileSync(`${repo.dir}/.laminae/derive/batch-0.json`, "utf8")) as {
+      items: { id: string; function: string }[];
+    };
+    assert.equal(batch.items.length, 1, "只有 calcBonus 值得看");
+    assert.equal(batch.items[0]!.function, "calcBonus");
+
+    const id = batch.items[0]!.id;
+    const resultPath = `${repo.dir}/result-0.json`;
+    fs.writeFileSync(
+      resultPath,
+      JSON.stringify({
+        batch: 0,
+        results: [
+          { id, text: "奖金 = 基数 × 2 + 1", target: "src/calc.ts", fact: { type: "path-exists" }, evidence: ["cat src/calc.ts"] },
+          { id: "src/nope.ts#nope", text: "不在计划里", target: "x", fact: { type: "path-exists" }, evidence: ["echo"] },
+          { id, text: "事实类型不存在", target: "y", fact: { type: "made-up" }, evidence: ["echo"] },
+        ],
+        notes: [],
+      }),
+      "utf8",
+    );
+    runLaminae(repo, "scripts/derive.ts", ["--accept", resultPath]);
+
+    const ideas = JSON.parse(fs.readFileSync(`${repo.dir}/.laminae/ideas.json`, "utf8")) as { id: string; source: string }[];
+    assert.equal(ideas.length, 1, "只有合格的那条被收下");
+    assert.equal(ideas[0]!.source, "inferred:src/calc.ts#calcBonus", "来源标成推断，和人工写的区分开");
+
+    const notes = JSON.parse(fs.readFileSync(`${repo.dir}/.laminae/derive/notes.json`, "utf8")) as { rejected?: boolean }[];
+    assert.equal(notes.filter((n) => n.rejected).length, 2, "不在计划里和事实非法的各退回一条");
+  } finally {
+    repo.dispose();
+  }
+});
