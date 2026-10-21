@@ -363,6 +363,8 @@ export interface CommitLayer {
   delegates?: { file: string; name: string; line: number; callee: string }[];
   /** 认得出扩展名、但没有语法模块的文件，如 .java、.go */
   unsupported?: string[];
+  /** 没有 import 边，但文件名在别的文件正文里作为字面量出现过（按约定加载）。不算孤立 */
+  convention?: string[];
 }
 
 export const EMPTY_COMMIT_LAYER: CommitLayer = { stubs: [], facts: [], declares: [], references: [], clues: [] };
@@ -386,6 +388,8 @@ export interface LayersData {
   testOnly: { file: string; alive: Interval[] }[];
   /** 没被任何代码引用、又不是入口和测试的文件。还没减去「被说法或想法提到」的那些，那一步在 joinLayers */
   unreferenced: { file: string; alive: Interval[] }[];
+  /** 没有 import 边，但文件名在别的文件正文里出现过：按约定加载的脚本、页面资产、插件。不算孤立 */
+  convention: { file: string; alive: Interval[] }[];
   contracts: ContractKind[];
   clues: { kind: string; file: string; alive: Interval[] }[];
   /** 认得出扩展名、但没有语法模块 */
@@ -470,15 +474,18 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
 
   const stubKeys = new Set<string>();
   const unrefKeys = new Set<string>();
+  const convKeys = new Set<string>();
   const clueKeys = new Set<string>();
   commits.forEach((c) => {
     for (const f of c.layer.stubs) stubKeys.add(f);
+    for (const f of c.layer.convention ?? []) convKeys.add(f);
     for (const f of c.files) if (!isTestFile(f) && !isEntryPoint(f)) unrefKeys.add(f);
     for (const cl of c.layer.clues) clueKeys.add(`${cl.kind}\u0000${cl.file}`);
   });
 
   const stubFlags = flagsOf(stubKeys);
   const unrefFlags = flagsOf(unrefKeys);
+  const convFlags = flagsOf(convKeys);
   const clueFlags = flagsOf(clueKeys);
 
   const kinds = new Set<string>();
@@ -517,9 +524,16 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
       if (arr) arr.push(s);
       else incoming.set(t, [s]);
     }
+    const convNow = new Set(c.layer.convention ?? []);
     for (const f of c.files) {
       mark(presentFlags, f, i);
       if (isTestFile(f) || isEntryPoint(f)) continue;
+      // 文件名在别的文件正文里出现过：按约定加载的脚本、页面资产、插件。
+      // 没有 import 边不等于没人用，这一档单独记，不算孤立也不算「只有测试引用」
+      if (convNow.has(f)) {
+        mark(convFlags, f, i);
+        continue;
+      }
       const srcs = incoming.get(f) ?? [];
       if (srcs.length === 0) {
         const fl = unrefFlags.get(f);
@@ -641,6 +655,7 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
     present: intervals(presentFlags).map(({ key, alive }) => ({ file: key, alive })),
     testOnly: intervals(testFlags).map(({ key, alive }) => ({ file: key, alive })),
     unreferenced: intervals(unrefFlags).map(({ key, alive }) => ({ file: key, alive })),
+    convention: intervals(convFlags).map(({ key, alive }) => ({ file: key, alive })),
     contracts: [...kinds].sort().map((kind) => ({
       kind,
       declared: toIntervals(declaredFlags.get(kind)!),
@@ -684,6 +699,8 @@ export interface LayerReport {
   unproven: { kind: "claim" | "idea"; label: string; file: string; alive: Interval[] }[];
   /** 没人引用、也没被任何说法或想法提到 */
   orphans: { file: string; alive: Interval[] }[];
+  /** 没有 import 边，但文件名在别的文件正文里出现过：按约定加载的脚本、页面资产、插件。不算孤立 */
+  convention: { file: string; alive: Interval[] }[];
   contracts: ContractKind[];
   clues: { kind: string; file: string; alive: Interval[] }[];
   unsupported: { file: string; alive: Interval[] }[];
@@ -821,5 +838,16 @@ export function joinLayers(data: LayersData, upper: readonly UpperLayer[]): Laye
       .map((u) => u.label),
   }));
 
-  return { hollow, covers, unproven, orphans, contracts: data.contracts, clues: data.clues, unsupported: data.unsupported, down };
+  return {
+    hollow,
+    covers,
+    unproven,
+    orphans,
+    // 被说法或想法提到的不再叫「按约定」——那已经是明确的证据了
+    convention: data.convention.filter((c) => !mentioned.has(c.file)),
+    contracts: data.contracts,
+    clues: data.clues,
+    unsupported: data.unsupported,
+    down,
+  };
 }
