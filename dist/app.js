@@ -1373,6 +1373,8 @@
           ${c.impact === "normal" ? "" : `<span class="impact" data-i="${c.impact}">${IMPACT_TEXT[c.impact]}</span>`}
           <span class="mono">${where}</span>
           <span class="pill" data-s="${c.atHead}">HEAD：${STATE_TEXT[c.atHead]}</span>
+          ${c.ruleMiss ? `<span class="pill" data-s="3" title="locator 从没匹配到：可能是文档没写，也可能是规则写错">规则没匹配到</span>` : ""}
+          ${c.captureHint ? `<span class="pill" data-s="3" title="捕获文本多带了字符，去掉首尾标点就对得上">捕获可疑</span>` : ""}
           <span class="dt-now">${now}</span>
         </header>
         <ul class="dt-runs">${c.runs.map((run) => runStory(c, run)).join("")}</ul>
@@ -1456,6 +1458,8 @@
       <h3>文档是这么写的</h3>
       <div class="quote">${escapeHtml2(claim.verbatim)}</div>
       ${claim.inexact ? `<p class="hint inexact">措辞像是下限 / 近似（「${escapeHtml2(claim.inexact)}」），这条说法现在按严格相等比较，红色可能不是文档的本意。在 claims.json 里给它加 <code>compare</code>（gte / lte / approx）。</p>` : ""}
+      ${claim.ruleMiss ? `<p class="hint inexact">这条的 locator 在整段历史里一次都没匹配到。可能是文档确实没写过这句话，也可能是 <code>${escapeHtml2(claim.locator)}</code> 写错了 —— 灰色不是「文档没写」的结论，是「没找到」。跑 <code>lookup</code> 看它到底捕获到了什么。</p>` : ""}
+      ${claim.captureHint ? `<p class="hint inexact">捕获到的文本去掉首尾标点之后，「${escapeHtml2(claim.captureHint)}」在仓库里确实存在。多半是 locator 的捕获组多带了字符（比如把反引号写进了括号里），不是文档写错了。</p>` : ""}
       ${blobUrl(commit.sha, claim.file, lineNo || 1) ? `<a class="verify" href="${blobUrl(commit.sha, claim.file, lineNo || 1)}" target="_blank" rel="noopener">
         去 GitHub 核对这一行
       </a>` : ""}
@@ -1598,6 +1602,20 @@
              <i class="swatch" data-s="${s}"></i>${STATE_TEXT[s]}<span class="n">${counts[s]}</span>
            </button>`
     ).join("") + `<span class="item plain">灰色 = 这个 commit 上文档里还没有这句话（不是没做完，也不是假）</span><span class="item plain">左侧红点 = 写下即假，从未真过</span>`;
+    const miss = P.claims.filter((c) => c.ruleMiss);
+    const suspect = P.claims.filter((c) => c.captureHint !== null);
+    const banner = $("#rulewarn");
+    if (!banner) return;
+    if (miss.length === 0 && suspect.length === 0) {
+      banner.innerHTML = "";
+      banner.hidden = true;
+      return;
+    }
+    banner.hidden = false;
+    banner.innerHTML = [
+      miss.length > 0 ? `<div><b>${miss.length} 条说法的 locator 在整段历史里一次都没匹配到。</b>灰色不代表「文档没写」，也可能是规则写错。先跑 <code>lookup</code> 看它们到底捕获到了什么：${miss.map((c) => `<code>${escapeHtml2(c.id)}</code>`).join("、")}</div>` : "",
+      suspect.length > 0 ? `<div><b>${suspect.length} 条说法判假，但捕获的文本多带了字符。</b>去掉首尾标点之后路径确实存在，多半是 locator 的捕获组写错了，不是文档写错：${suspect.map((c) => `<code>${escapeHtml2(c.id)}</code>→<code>${escapeHtml2(c.captureHint ?? "")}</code>`).join("、")}</div>` : ""
+    ].join("");
   }
   function wire() {
     mapEl.addEventListener("mouseover", (e) => {

@@ -122,6 +122,15 @@ The parent directory (the level that is not a repository but has repositories be
 | Measurement data out of sync with claims.json | Re-run `run.ts` after changing `claims.json` |
 | One repository fails with multiple repositories | The rest still run to completion, and the overall exit code is non-zero. Re-run that one alone with `--repo` |
 
+## When the rule itself is wrong
+
+Two hints, neither of which changes the verdict — they only point at what looks suspicious:
+
+- **Rule never matched**: a claim's `locator` matched nothing anywhere in the history. The state shows "not written yet", but the cause may be that the document never said it, or that the regex is wrong. The tool cannot tell these apart, so it adds a separate badge and points at `lookup` to show what the locator actually captured.
+- **Capture suspect**: a reference claim is false, but after trimming leading and trailing punctuation (backticks, quotes, brackets, commas, full stops, colons) from the captured text, a file of that name does exist at HEAD. That is almost always a capture group that swallowed an extra character — for example a backtick written inside the parentheses, which captures the path plus a trailing backtick.
+
+**Both of these make the tool accuse the wrong thing.** A check that accuses wrongly is worse than no check: people stop believing the red. So each has its own badge and neither is folded into "false".
+
 ## How to read the results
 
 At each commit every claim has one of four states: true, false, not written yet (gray), unmeasurable. A consecutive stretch of false is a false run, whose length is the hiatus, and it is classified by closure method. The meaning of each outcome is in [SPEC.md](SPEC.en.md).

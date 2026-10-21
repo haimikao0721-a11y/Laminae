@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * laminae —— 构建期数据处理
  *
@@ -123,6 +123,28 @@ function headOf(claim: ClaimDef): { text: string; line: number } {
 }
 const headInfo = new Map(claims.map((c) => [c.id, headOf(c)]));
 
+/**
+ * HEAD 上的全部文件。只用来回答一个问题：把捕获到的文本去掉首尾标点之后，
+ * 有没有一个同名的文件确实存在。存在就说明多半是 locator 的捕获组多带了字符。
+ */
+const HEAD_PATHS = ((): Set<string> => {
+  try {
+    const out = execFileSync("git", ["-c", "core.quotepath=false", "-C", REPO, "ls-tree", "-r", "--name-only", "HEAD"], {
+      encoding: "utf8",
+      maxBuffer: 1 << 26,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return new Set(out.split("\n").filter(Boolean));
+  } catch {
+    return new Set<string>();
+  }
+})();
+
+/** 捕获到的文本去掉首尾标点（反引号、引号、括号、逗号、句号、冒号） */
+function edgeTrimmed(s: string): string {
+  return s.replace(/^[\s`'"([{]+/, "").replace(/[\s`'")\]},.;:]+$/, "");
+}
+
 /* ── 3. 组装 ── */
 
 function toRun(
@@ -174,6 +196,17 @@ function toVerbatimRuns(lines: (string | null)[]): VerbatimRun[] {
 const outClaims: ClaimTimeline[] = timeline.results.map((r) => {
   const def = claims.find((c) => c.id === r.id);
   const head = headInfo.get(r.id) ?? { text: "", line: 0 };
+  const verbatimRuns = toVerbatimRuns(r.verbatimByCommit ?? []);
+  // locator 在整段历史里一次都没匹配到。分不清是文档没写还是规则写错，只把这件事标出来。
+  // 注意：永不匹配时 verbatimRuns 不是空的，而是每一段的 text 都是 null
+  const ruleMiss = verbatimRuns.length === 0 || verbatimRuns.every((x) => x.text === null);
+  // 引用型说法判假，但捕获文本去掉首尾标点之后文件确实存在 —— 多半是捕获组多带了字符
+  const capturedHead = (r.claimedText ?? []).at(-1) ?? "";
+  const trimmed = typeof capturedHead === "string" ? edgeTrimmed(capturedHead) : "";
+  const captureHint =
+    r.kind === "exists" && r.atHead === 1 && trimmed !== "" && trimmed !== capturedHead && HEAD_PATHS.has(trimmed)
+      ? trimmed
+      : null;
   return {
     id: r.id,
     impact: r.impact ?? "normal",
@@ -186,7 +219,9 @@ const outClaims: ClaimTimeline[] = timeline.results.map((r) => {
     locator: def?.locator ?? "",
     verbatim: head.text,
     line: head.line,
-    verbatimRuns: toVerbatimRuns(r.verbatimByCommit ?? []),
+    verbatimRuns,
+    ruleMiss,
+    captureHint,
     // 写下即假的那一段一定是第一段假段
     runs: r.falseRuns.map((run, k) =>
       toRun(run, r.outcomes[k] ?? "anomaly", r.states, r.claimed, r.actual, r.bornFalse && k === 0),
