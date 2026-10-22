@@ -345,6 +345,9 @@ if (payload.ideas) console.log(`  想法与边界：${payload.ideas.length} 条`
 if (layers) {
   const unmet = layers.contracts.reduce((s, c) => s + c.unmet.length, 0);
   const fake = layers.contracts.reduce((s, c) => s + c.fake.length, 0);
-  console.log(`  层与层对账：假实现 ${layers.hollow.length + fake} 处，被盖住 ${layers.covers.length} 处，有代码但未证实 ${layers.unproven.length} 处，孤立模块 ${layers.orphans.length} 个${layers.entry.length > 0 ? `（另有 ${layers.entry.length} 个没有引用边、但有入口证据，已排除）` : ""}，契约对不上 ${unmet} 处`);
+  const liveDown = layers.down.filter((d) => d.atHead).length;
+const goneDown = layers.down.length - liveDown;
+console.log(`  往下看一层：当前成立 ${liveDown} 条${goneDown > 0 ? `，另有 ${goneDown} 条只在历史提交里出现过` : ""}`);
+console.log(`  层与层对账：假实现 ${layers.hollow.length + fake} 处，被盖住 ${layers.covers.length} 处，有代码但未证实 ${layers.unproven.length} 处，孤立模块 ${layers.orphans.length} 个${layers.entry.length > 0 ? `（另有 ${layers.entry.length} 个没有引用边、但有入口证据，已排除）` : ""}，契约对不上 ${unmet} 处`);
 }
 console.log(`\n已写入 ${PAYLOAD_PATH}`);

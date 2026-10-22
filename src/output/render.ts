@@ -135,14 +135,30 @@ const COVER_WORD: Record<string, string> = {
 const UNVERIFIED_HOW = new Set(["handler-unresolved", "one-sided", "alias"]);
 
 function downHtml(l: LayerReport, n: number): string {
-  const items = (l.down ?? []).map((d) => {
+  // 只存在于历史的条目不能和现存的问题混在一起。
+  // click 上 100 条里有 53 条是 2014 年单文件时代的骨架，早就没了；
+  // 混排之后截前 40 条，看到的全是历史噪声，真正还在的问题反而排不进去。
+  const live = (l.down ?? []).filter((d) => d.atHead);
+  const gone = (l.down ?? []).filter((d) => !d.atHead);
+  const line = (d: LayerReport["down"][number]): string => {
     const where = d.holds.length > 0 ? `说法或想法「${d.holds.map(esc).join("、")}」在这段时间里成立。` : "没有说法指向它，是从代码里直接看到的。";
     const via = d.via ? `追到 <code>${esc(d.via)}</code>。` : "";
     return `<li><code>${esc(d.file)}:${d.line}</code> <b>${esc(d.name)}</b> ${REASON_TEXT[d.reason] ?? d.reason}。${via}（${spans(d.alive, n)}）。${where}</li>`;
-  });
+  };
+  const items = live.map(line);
+  const old = gone.map(line);
+  const subtitle =
+    gone.length > 0
+      ? `空函数、只返回空值、写着没实现、只去调用别的空函数。这是迹象，不是已经确认的业务错误。每条落到函数和定义行。当前还成立的 ${live.length} 条；另有 ${gone.length} 条只在历史提交里出现过，折叠在下面`
+      : `空函数、只返回空值、写着没实现、只去调用别的空函数。这是迹象，不是已经确认的业务错误。每条落到函数和定义行`;
   return `<section class="card outcomes" id="down-card">
-  <h2>需要人工复核：函数往下看一层<small>空函数、只返回空值、写着没实现、只去调用别的空函数。这是迹象，不是已经确认的业务错误。每条落到函数和定义行</small></h2>
-  ${items.length === 0 ? `<p class="hintline">没有看到这种函数。</p>` : `<ul>${capped(items, 40)}</ul>`}
+  <h2>需要人工复核：函数往下看一层<small>${subtitle}</small></h2>
+  ${items.length === 0 ? `<p class="hintline">当前没有还成立的这种函数。</p>` : `<ul>${capped(items, 40)}</ul>`}
+  ${
+    old.length === 0
+      ? ""
+      : `<details class="history"><summary>另有 ${old.length} 条只在历史提交里出现过，现在已不存在</summary><ul>${capped(old, 40)}</ul></details>`
+  }
 </section>`;
 }
 
