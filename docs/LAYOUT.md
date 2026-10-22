@@ -15,6 +15,7 @@
 | `scripts/trace.ts` | 从入口到空壳的调用路径是什么 | 不改 |
 | `scripts/branches.ts` | 有没有分支修好了但没合进来 | 不改 |
 | `scripts/merges.ts` | 合并有没有把某个修复弄丢 | 不改 |
+| `scripts/verify.ts` | **这份报告是不是编出来的** | 不改 |
 
 **后四个都是只读**，且都从 git 对象直接读，工作区一次不动（`test-passes` 一类命令事实除外，那类要临时 worktree）。
 
