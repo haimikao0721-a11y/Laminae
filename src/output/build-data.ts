@@ -62,9 +62,18 @@ interface TimelineResult {
   headActual: number | null;
   totalFalse: number;
 }
+interface ClaimWarning {
+  id: string;
+  label: string;
+  level: "error" | "warn";
+  code: string;
+  message: string;
+}
 interface Timeline {
   commitCount: number;
   commits: { short: string; date: string; subject: string }[];
+  /** 说法体检的结果。写不出来的说法会静默判成「尚未写入文档」，这里把它们点出来 */
+  claimWarnings?: ClaimWarning[];
   results: TimelineResult[];
 }
 
@@ -321,6 +330,7 @@ const payload: Payload = {
   commits,
   claims: outClaims,
   summary,
+  ...(timeline.claimWarnings && timeline.claimWarnings.length > 0 ? { claimWarnings: timeline.claimWarnings } : {}),
   ...(graph && graph.nodes.length > 0 ? { graph } : {}),
   ...(ideas && ideas.length > 0 ? { ideas } : {}),
   ...(candidates ? { candidates } : {}),

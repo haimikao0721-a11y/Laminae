@@ -135,6 +135,8 @@ Two hints, neither of which changes the verdict — they only point at what look
 
 **Both of these make the tool accuse the wrong thing.** A check that accuses wrongly is worse than no check: people stop believing the red. So each has its own badge and neither is folded into "false".
 
+- **Claim lint**: before measuring, each claim is checked for whether it can be expressed at all; results appear in the console and at the top of the report. Three things are checked: for numeric fact types the `locator` capture must be a number (a version string such as `8.6.0` does not parse, and every commit silently becomes "not yet written in the document"); the `locator` matches nothing in the document at the base commit; and the `fact` object carries fields its type does not accept (`parseFact` drops them silently, so writing them has no effect).
+
 ## How to read the results
 
 What each of the five commands answers, and how src should be grouped, is in [LAYOUT.md](LAYOUT.en.md).

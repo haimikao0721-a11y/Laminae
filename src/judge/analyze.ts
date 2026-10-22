@@ -12,6 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadClaims } from "../measure/claims.ts";
+import { formatWarnings, lintClaimsFile } from "../measure/lint.ts";
 import { isHold, isReferential } from "../measure/facts.ts";
 import { alignToBaseline } from "../measure/observe.ts";
 import { CLAIMS_PATH, DATA_DIR } from "../core/paths.ts";
@@ -49,6 +50,12 @@ try {
   console.error((e as Error).message);
   process.exit(1);
 }
+
+// 说法体检：有些说法根本写不出来，却会静默判成「尚未写入文档」。
+// 在出结论之前先报出来，免得把「我没测」当成「文档没写」。
+const headDocs = docBodies.length > 0 ? docBodies[docBodies.length - 1]!.files : {};
+const claimWarnings = lintClaimsFile(CLAIMS_PATH, claims, (f) => (Object.hasOwn(headDocs, f) ? headDocs[f]! : null));
+if (claimWarnings.length > 0) console.log(formatWarnings(claimWarnings) + "\n");
 
 const commits = factsFile.commits;
 const docOf = new Map(docBodies.map((d) => [d.sha, d]));
@@ -351,6 +358,7 @@ fs.writeFileSync(
       generatedAt: new Date().toISOString(),
       commitCount: commits.length,
       commits: commits.map((c) => ({ short: c.short, date: c.date, subject: c.subject })),
+      claimWarnings,
       results,
     },
     null,
