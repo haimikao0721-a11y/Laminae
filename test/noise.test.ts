@@ -88,14 +88,14 @@ test("紧凑输出：行数与行宽不随 commit 数增长；--verbose 才有�
       { ...LEVELS_CLAIM, id: "b", label: "b" },
       { ...LEVELS_CLAIM, id: "c", label: "c" },
     ]);
-    runLaminae(repo, "src/measure.ts");
+    runLaminae(repo, "src/measure/measure.ts");
 
-    const compact = runLaminae(repo, "src/analyze.ts");
+    const compact = runLaminae(repo, "src/judge/analyze.ts");
     const longestGlyphRun = (s: string): number => Math.max(0, ...(s.match(/[TF.?]{20,}/g) ?? []).map((m) => m.length));
     assert.ok(compact.split("\n").length < 45, `紧凑输出有 ${compact.split("\n").length} 行`);
     assert.equal(longestGlyphRun(compact), 0, "紧凑输出里不应出现逐 commit 的时间线");
 
-    const verbose = runLaminae(repo, "src/analyze.ts", ["--verbose"]);
+    const verbose = runLaminae(repo, "src/judge/analyze.ts", ["--verbose"]);
     assert.ok(longestGlyphRun(verbose) >= 100, "--verbose 要打印完整时间线");
   } finally {
     repo.dispose();

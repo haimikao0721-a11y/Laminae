@@ -6,11 +6,11 @@
  * 或者模块之间有没有引用（import-edge：A 引用了 B）。
  * 证据和想法的方向（应该有 / 应该没有）是人声明的，工具只负责逐 commit 核对，不猜。
  */
-import { describeFact, evalFact, isReferential, parseFact } from "./facts.ts";
-import { repoRelative } from "./paths.ts";
-import type { FactSpec, Tree } from "./facts.ts";
-import { isCodeFile } from "./imports.ts";
-import type { IdeaState } from "./types.ts";
+import { describeFact, evalFact, isReferential, parseFact } from "../measure/facts.ts";
+import { repoRelative } from "../core/paths.ts";
+import type { FactSpec, Tree } from "../measure/facts.ts";
+import { isCodeFile } from "../layers/imports.ts";
+import type { IdeaState } from "../core/types.ts";
 
 /** 模块之间的引用：from 下的某个文件引用了 to 下的某个文件。from / to 是目录或单个文件 */
 export interface EdgeFact {

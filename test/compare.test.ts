@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { comparePrefix, describeCompare, inexactWording, satisfies } from "../src/compare.ts";
-import { judgeState } from "../src/classify.ts";
-import { ABSENT, FALSE, TRUE, UNMEASURED } from "../src/types.ts";
+import { comparePrefix, describeCompare, inexactWording, satisfies } from "../src/measure/compare.ts";
+import { judgeState } from "../src/judge/classify.ts";
+import { ABSENT, FALSE, TRUE, UNMEASURED } from "../src/core/types.ts";
 import { LEVELS_CLAIM, runFile, runLaminae, runPipeline, sys, TestRepo } from "./helpers.ts";
-import type { ClaimInput } from "../src/types.ts";
+import type { ClaimInput } from "../src/core/types.ts";
 
 test("satisfies：eq、gte、lte 的边界值", () => {
   assert.equal(satisfies(1600, 1600, "eq"), true);
@@ -80,17 +80,17 @@ test("端到端：严格相等的说法措辞像下限时，终端与页面数�
     repo.commit({ "README.md": readme(3, "+"), "assets/data/systems.json": sys(5) }, "c0");
     const locator = "(\\d+)\\+? 关";
     runPipeline(repo, [{ ...LEVELS_CLAIM, locator }]);
-    const out = runLaminae(repo, "src/analyze.ts");
+    const out = runLaminae(repo, "src/judge/analyze.ts");
     assert.match(out, /措辞像是下限/);
     assert.match(out, /3\+ 关/);
-    runLaminae(repo, "src/build-data.ts");
+    runLaminae(repo, "src/output/build-data.ts");
     const payload = JSON.parse(fs.readFileSync(runFile(repo, "payload.json"), "utf8")) as { claims: { inexact: string | null; compare: string }[] };
     assert.match(payload.claims[0]!.inexact!, /3\+/);
     assert.equal(payload.claims[0]!.compare, "eq");
 
     runPipeline(repo, [{ ...LEVELS_CLAIM, locator, compare: "gte" }]);
-    assert.doesNotMatch(runLaminae(repo, "src/analyze.ts"), /措辞像是下限/);
-    runLaminae(repo, "src/build-data.ts");
+    assert.doesNotMatch(runLaminae(repo, "src/judge/analyze.ts"), /措辞像是下限/);
+    runLaminae(repo, "src/output/build-data.ts");
     const p2 = JSON.parse(fs.readFileSync(runFile(repo, "payload.json"), "utf8")) as { claims: { inexact: string | null; compare: string }[] };
     assert.equal(p2.claims[0]!.inexact, null);
     assert.equal(p2.claims[0]!.compare, "gte");

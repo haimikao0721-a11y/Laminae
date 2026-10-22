@@ -12,14 +12,14 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { assertBoundRepo, LOG_ARGS, VERBOSE } from "./config.ts";
-import { ensureExcluded } from "./exclude.ts";
+import { assertBoundRepo, LOG_ARGS, VERBOSE } from "../core/config.ts";
+import { ensureExcluded } from "../core/exclude.ts";
 import { buildGraph } from "./graph-core.ts";
 import type { CommitGraph } from "./graph-core.ts";
 import { buildLayers } from "./layers-core.ts";
 import type { LayerCommit } from "./layers-core.ts";
-import { commitShas } from "./gitutil.ts";
-import { DATA_DIR } from "./paths.ts";
+import { commitShas } from "../core/gitutil.ts";
+import { DATA_DIR } from "../core/paths.ts";
 import { ImportScanner } from "./scan.ts";
 
 assertBoundRepo();

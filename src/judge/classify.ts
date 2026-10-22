@@ -3,10 +3,10 @@
  *
  * 纯函数，不读文件、不打印，analyze.ts 与测试共用。
  */
-import { satisfies } from "./compare.ts";
-import type { Compare } from "./compare.ts";
-import { ABSENT, FALSE, TRUE, UNMEASURED } from "./types.ts";
-import type { Outcome, State } from "./types.ts";
+import { satisfies } from "../measure/compare.ts";
+import type { Compare } from "../measure/compare.ts";
+import { ABSENT, FALSE, TRUE, UNMEASURED } from "../core/types.ts";
+import type { Outcome, State } from "../core/types.ts";
 
 /** 一条说法逐 commit 的判定结果 */
 export interface Judged {

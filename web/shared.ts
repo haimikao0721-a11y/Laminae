@@ -3,7 +3,7 @@
  *
  * 「当前时间点」只有一份：调用关系图、想法条都跟着它走，拖一处，几处一起动。
  */
-import type { Commit } from "../src/types.ts";
+import type { Commit } from "../src/core/types.ts";
 
 export const escapeHtml = (s: string): string =>
   s.replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[m]!);

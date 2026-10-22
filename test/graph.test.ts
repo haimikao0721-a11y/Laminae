@@ -2,11 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { MAX_NODES, buildGraph, chooseDepth } from "../src/graph-core.ts";
-import { aliveAt, groupOf } from "../src/graph-util.ts";
+import { MAX_NODES, buildGraph, chooseDepth } from "../src/layers/graph-core.ts";
+import { aliveAt, groupOf } from "../src/layers/graph-util.ts";
 import { layoutGraph, shortLabels } from "../web/layout.ts";
 import { TestRepo, runLaminae } from "./helpers.ts";
-import type { GraphData } from "../src/types.ts";
+import type { GraphData } from "../src/core/types.ts";
 
 test("buildGraph：节点与边折成存在的区间", () => {
   const g = buildGraph([
@@ -103,7 +103,7 @@ test("端到端：逐 commit 抽取引用，增删引用与文件都反映在区
     repo.commit({ "src/a.js": "const c = require('./lib')\n", "src/lib/index.js": "module.exports = 1\n" }, "c2 改引用 lib 目录");
     repo.commit({ "README.md": "只改文档\n" }, "c3 没动代码");
     repo.commit({ "src/b.js": null }, "c4 删 b");
-    runLaminae(repo, "src/graph.ts");
+    runLaminae(repo, "src/layers/graph.ts");
 
     const g = JSON.parse(fs.readFileSync(path.join(repo.dir, ".laminae", "data", "graph.json"), "utf8")) as GraphData;
     const id = (i: number): string => g.nodes[i]!.id;
@@ -122,7 +122,7 @@ test("端到端：Python 的相对引用", () => {
   const repo = new TestRepo();
   try {
     repo.commit({ "pkg/__init__.py": "", "pkg/a.py": "from . import b\nfrom .c import f\n", "pkg/b.py": "", "pkg/c.py": "" }, "py");
-    runLaminae(repo, "src/graph.ts");
+    runLaminae(repo, "src/layers/graph.ts");
     const g = JSON.parse(fs.readFileSync(path.join(repo.dir, ".laminae", "data", "graph.json"), "utf8")) as GraphData;
     const has = (s: string, t: string): boolean => g.edges.some((e) => g.nodes[e.s]!.id === s && g.nodes[e.t]!.id === t);
     assert.ok(has("pkg/a.py", "pkg/b.py"));
@@ -136,7 +136,7 @@ test("端到端：没有可解析的代码时，图是空的而不是报错", ()
   const repo = new TestRepo();
   try {
     repo.commit({ "main.go": "package main\n", "README.md": "x\n" });
-    const out = runLaminae(repo, "src/graph.ts");
+    const out = runLaminae(repo, "src/layers/graph.ts");
     const g = JSON.parse(fs.readFileSync(path.join(repo.dir, ".laminae", "data", "graph.json"), "utf8")) as GraphData;
     assert.equal(g.nodes.length, 0);
     assert.match(out, /没有找到可解析/);

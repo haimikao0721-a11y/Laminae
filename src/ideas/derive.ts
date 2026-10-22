@@ -18,12 +18,12 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { git } from "./gitutil.ts";
+import { git } from "../core/gitutil.ts";
 import { parseIdeas } from "./ideas-core.ts";
-import { isCodeFile, isTestFile } from "./imports.ts";
-import { IDEAS_PATH, WORK_DIR } from "./paths.ts";
-import { BlobReader } from "./scan.ts";
-import { pickModule } from "./syntax-registry.ts";
+import { isCodeFile, isTestFile } from "../layers/imports.ts";
+import { IDEAS_PATH, WORK_DIR } from "../core/paths.ts";
+import { BlobReader } from "../layers/scan.ts";
+import { pickModule } from "../layers/syntax-registry.ts";
 
 export const DERIVE_DIR = path.join(WORK_DIR, "derive");
 export const STATE_PATH = path.join(DERIVE_DIR, "state.json");

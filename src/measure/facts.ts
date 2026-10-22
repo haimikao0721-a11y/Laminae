@@ -5,7 +5,7 @@
  * 数仓库的那几种只读 git 对象（文件列表与文件内容），不执行命令。
  * test-passes、invariant-holds、output-unchanged 要跑命令才知道，求值在 observe.ts，不在这里。
  */
-import { repoRelative } from "./paths.ts";
+import { repoRelative } from "../core/paths.ts";
 
 export type FactSpec =
   /** 匹配 glob 的文件个数 */

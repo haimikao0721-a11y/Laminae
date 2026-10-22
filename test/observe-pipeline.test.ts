@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TestRepo, runPipeline } from "./helpers.ts";
-import type { ClaimInput } from "../src/types.ts";
+import type { ClaimInput } from "../src/core/types.ts";
 
 const node = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
 

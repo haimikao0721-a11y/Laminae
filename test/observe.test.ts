@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alignToBaseline, fingerprint, interpretObserved, nextObservation, watchKey } from "../src/observe.ts";
+import { alignToBaseline, fingerprint, interpretObserved, nextObservation, watchKey } from "../src/measure/observe.ts";
 
 test("interpretObserved：退出码 0 是通过，非 0 是失败，超时是测不出来", () => {
   assert.equal(interpretObserved("test-passes", { failed: false, code: 0, stdout: "" }), 1);

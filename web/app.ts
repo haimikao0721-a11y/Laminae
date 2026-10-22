@@ -8,9 +8,9 @@
  *   来源可点开去核对、搜索、预设视图、图例可点、时间推进播放。
  *   没有照搬它的小地图、Reading Depth、Route Probe —— 这个图用不上。
  */
-import { TRUE, FALSE, ABSENT, UNMEASURED, OUTCOME_TEXT } from "../src/types.ts";
-import { comparePrefix, describeCompare } from "../src/compare.ts";
-import type { Payload, ClaimTimeline, Outcome, Run } from "../src/types.ts";
+import { TRUE, FALSE, ABSENT, UNMEASURED, OUTCOME_TEXT } from "../src/core/types.ts";
+import { comparePrefix, describeCompare } from "../src/measure/compare.ts";
+import type { Payload, ClaimTimeline, Outcome, Run } from "../src/core/types.ts";
 import { initGraph } from "./graph.ts";
 import { gridView, initGridZoom, tickSet } from "./gridzoom.ts";
 import { initIdeas } from "./ideas.ts";

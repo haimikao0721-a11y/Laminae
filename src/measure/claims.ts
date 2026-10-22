@@ -8,8 +8,8 @@ import fs from "node:fs";
 import { COMPARES, DEFAULT_TOLERANCE } from "./compare.ts";
 import type { Compare } from "./compare.ts";
 import { isObserved, isReferential, parseFact } from "./facts.ts";
-import { repoRelative } from "./paths.ts";
-import { IMPACTS, type ClaimDef, type Impact } from "./types.ts";
+import { repoRelative } from "../core/paths.ts";
+import { IMPACTS, type ClaimDef, type Impact } from "../core/types.ts";
 
 /** 校验已解析的 JSON，返回规范化后的说法列表。出错抛 Error */
 export function parseClaims(raw: unknown): ClaimDef[] {

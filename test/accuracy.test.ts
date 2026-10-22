@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { scoreAccuracy } from "../src/accuracy.ts";
-import type { AccuracyRow } from "../src/accuracy.ts";
+import { scoreAccuracy } from "../src/judge/accuracy.ts";
+import type { AccuracyRow } from "../src/judge/accuracy.ts";
 import { runFile, runLaminae, TestRepo, writeClaims } from "./helpers.ts";
-import type { LayerReport } from "../src/layers-core.ts";
+import type { LayerReport } from "../src/layers/layers-core.ts";
 
 test("scoreAccuracy：命中、误报、漏报、没问题", () => {
   const rows: AccuracyRow[] = [

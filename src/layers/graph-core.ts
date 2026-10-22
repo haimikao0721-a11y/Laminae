@@ -7,7 +7,7 @@
  */
 import { groupOf } from "./graph-util.ts";
 import { isTestFile } from "./imports.ts";
-import type { GraphData, Interval } from "./types.ts";
+import type { GraphData, Interval } from "../core/types.ts";
 
 export { aliveAt, groupOf } from "./graph-util.ts";
 

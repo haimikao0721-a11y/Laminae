@@ -20,15 +20,15 @@ import {
   collectTodos,
   sampleIndexes,
 } from "./candidates.ts";
-import { assertBoundRepo, LOG_ARGS, VERBOSE } from "./config.ts";
-import { factFiles } from "./facts.ts";
-import { ensureExcluded } from "./exclude.ts";
-import { commitShas, git, openTrees } from "./gitutil.ts";
+import { assertBoundRepo, LOG_ARGS, VERBOSE } from "../core/config.ts";
+import { factFiles } from "../measure/facts.ts";
+import { ensureExcluded } from "../core/exclude.ts";
+import { commitShas, git, openTrees } from "../core/gitutil.ts";
 import { describeIdea, evalEdge, ideaStateAt, isEdge, parseIdeas, summarizeIdea } from "./ideas-core.ts";
 import type { EdgeEval, EdgeScan } from "./ideas-core.ts";
-import { DATA_DIR, IDEAS_PATH } from "./paths.ts";
-import { ImportScanner } from "./scan.ts";
-import type { Candidates, IdeaState, IdeaTimeline } from "./types.ts";
+import { DATA_DIR, IDEAS_PATH } from "../core/paths.ts";
+import { ImportScanner } from "../layers/scan.ts";
+import type { Candidates, IdeaState, IdeaTimeline } from "../core/types.ts";
 
 assertBoundRepo();
 ensureExcluded();

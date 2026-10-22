@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classify, judgeState, parseClaimedNumber, segment } from "../src/classify.ts";
-import { ABSENT, FALSE, TRUE, UNMEASURED } from "../src/types.ts";
-import type { State } from "../src/types.ts";
+import { classify, judgeState, parseClaimedNumber, segment } from "../src/judge/classify.ts";
+import { ABSENT, FALSE, TRUE, UNMEASURED } from "../src/core/types.ts";
+import type { State } from "../src/core/types.ts";
 
 /** 按给定的「文档写的 / 实际的」序列算出状态，再取第一个假段的结局 */
 function outcomeOf(claimed: (number | null)[], actual: (number | null)[]): string {

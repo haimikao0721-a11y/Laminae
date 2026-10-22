@@ -8,7 +8,7 @@
  * Kaplan-Meier 估计把删失的段算进「仍在风险中」的人数，只在它被观察到的那段时间里起作用，
  * 不会把它当成已经结束。
  */
-import type { Outcome } from "./types.ts";
+import type { Outcome } from "../core/types.ts";
 
 /** 一个观察：持续了多久（commit 数或小时数），以及它是否真的结束了 */
 export interface Obs {

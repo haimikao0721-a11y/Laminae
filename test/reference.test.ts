@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { runFile, runLaminae, TestRepo, writeClaims } from "./helpers.ts";
-import type { ClaimInput } from "../src/types.ts";
+import type { ClaimInput } from "../src/core/types.ts";
 
 const pkg = (scripts: Record<string, string>): string => JSON.stringify({ name: "demo", scripts });
 
@@ -146,8 +146,8 @@ test("impact 只是带到数据里的标签，不改变任何结论", () => {
     assert.deepEqual(tagged.states, plain.states);
     assert.deepEqual(tagged.outcomes, plain.outcomes);
 
-    runLaminae(repo, "src/build-data.ts");
-    runLaminae(repo, "src/render.ts");
+    runLaminae(repo, "src/output/build-data.ts");
+    runLaminae(repo, "src/output/render.ts");
     const html = fs.readFileSync(runFile(repo, "laminae.html"), "utf8");
     assert.match(html, /"impact":\s*"high"/);
   } finally {

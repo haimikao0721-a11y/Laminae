@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isUnsupportedCode, langOf } from "../src/lang.ts";
-import { isCodeFile, resolveRust } from "../src/imports.ts";
-import { rsModule } from "../src/syntax-rs.ts";
-import { buildLayers, joinLayers } from "../src/layers-core.ts";
-import type { CommitLayer, LayerCommit } from "../src/layers-core.ts";
+import { isUnsupportedCode, langOf } from "../src/layers/lang.ts";
+import { isCodeFile, resolveRust } from "../src/layers/imports.ts";
+import { rsModule } from "../src/layers/syntax-rs.ts";
+import { buildLayers, joinLayers } from "../src/layers/layers-core.ts";
+import type { CommitLayer, LayerCommit } from "../src/layers/layers-core.ts";
 
 test("langOf：JS/TS/Python/Rust 支持，Java/Go/C# 认得出但没有模块，别的不当成代码", () => {
   assert.equal(langOf("src/a.ts"), "js");

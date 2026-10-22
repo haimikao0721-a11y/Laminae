@@ -20,7 +20,7 @@ import type { ResolveEnv } from "./imports.ts";
 import { codeLines, isNonCodeLine, normRoute } from "./syntax.ts";
 import type { Binding, FnReason, HandlerKind, PyMount, PyRouter, RouteDecl } from "./syntax.ts";
 import { MODULES, allBindings, allMounts, allRouters, allRoutes, pickModule } from "./syntax-registry.ts";
-import type { Interval } from "./types.ts";
+import type { Interval } from "../core/types.ts";
 
 /**
  * 一个文件看起来做了多少。这不是「真的实现了」的判断。

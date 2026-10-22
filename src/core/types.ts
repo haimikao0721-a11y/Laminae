@@ -14,12 +14,12 @@
  * （例如被测文件在那个 commit 上缺失或损坏）；混成「还不存在」会让说法在图上凭空消失，
  * 也会让「说法被删掉」的结局无法与之区分。
  */
-import type { Compare } from "./compare.ts";
-import type { FactSpec } from "./facts.ts";
-import type { LayerReport } from "./layers-core.ts";
+import type { Compare } from "../measure/compare.ts";
+import type { FactSpec } from "../measure/facts.ts";
+import type { LayerReport } from "../layers/layers-core.ts";
 
 export type { LayerReport };
-import type { Closure } from "./survival.ts";
+import type { Closure } from "../judge/survival.ts";
 
 /** 真假状态 */
 export const TRUE = 0;

@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ClaimInput, State } from "../src/types.ts";
+import type { ClaimInput, State } from "../src/core/types.ts";
 
 /** laminae（skill）自己的根目录 */
 export const SKILL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -132,7 +132,7 @@ export function runLaminae(repo: TestRepo, script: string, args: string[] = [], 
 /** 对仓库跑 measure 与 analyze，返回 timeline.json 的内容 */
 export function runPipeline(repo: TestRepo, claims: ClaimInput[] = [LEVELS_CLAIM]): Pipeline {
   writeClaims(repo, claims);
-  for (const step of ["src/measure.ts", "src/analyze.ts"]) runLaminae(repo, step);
+  for (const step of ["src/measure/measure.ts", "src/judge/analyze.ts"]) runLaminae(repo, step);
   return JSON.parse(fs.readFileSync(path.join(repo.dir, ".laminae", "data", "timeline.json"), "utf8")) as Pipeline;
 }
 

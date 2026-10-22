@@ -5,7 +5,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { REPO } from "./config.ts";
-import type { Tree } from "./facts.ts";
+import type { Tree } from "../measure/facts.ts";
 
 /**
  * 解析 `git cat-file --batch` 的输出。按字节切，不按字符，否则含非 UTF-8 的文件会把后面的条目错位。

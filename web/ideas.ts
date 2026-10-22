@@ -7,7 +7,7 @@
  *
  * 时间点与调用关系图共用：点条上的任意位置，图也跳到那个 commit。
  */
-import type { Candidate, IdeaTimeline, Payload } from "../src/types.ts";
+import type { Candidate, IdeaTimeline, Payload } from "../src/core/types.ts";
 import { commitText, escapeHtml, timeline } from "./shared.ts";
 import type { GraphApi } from "./shared.ts";
 

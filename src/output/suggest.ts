@@ -7,8 +7,8 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { parseGrepLine } from "./candidates.ts";
-import { assertBoundRepo, REPO } from "./config.ts";
+import { parseGrepLine } from "../ideas/candidates.ts";
+import { assertBoundRepo, REPO } from "../core/config.ts";
 
 /** 只用来把可能相关的行捞出来。真正匹配仍用下面的 JS 正则，git 没有先行断言 */
 const GREP = "[0-9][0-9,]*[[:space:]]*\\+|(约|大约|大概|about|around|approximately)[[:space:]]*[0-9]|(npm|pnpm|yarn)[[:space:]]+run[[:space:]]|共[[:space:]]*[0-9]";

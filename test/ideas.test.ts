@@ -2,12 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { collectChecklist, collectTodos, parseChecklist, parseTodo, sampleIndexes } from "../src/candidates.ts";
-import { describeIdea, evalEdge, ideaStateAt, parseIdeas, summarizeIdea } from "../src/ideas-core.ts";
-import type { EdgeFact, EdgeScan } from "../src/ideas-core.ts";
+import { collectChecklist, collectTodos, parseChecklist, parseTodo, sampleIndexes } from "../src/ideas/candidates.ts";
+import { describeIdea, evalEdge, ideaStateAt, parseIdeas, summarizeIdea } from "../src/ideas/ideas-core.ts";
+import type { EdgeFact, EdgeScan } from "../src/ideas/ideas-core.ts";
 import { TestRepo, runLaminae, writeClaims } from "./helpers.ts";
-import type { Candidates, IdeaTimeline } from "../src/types.ts";
-import type { Tree } from "../src/facts.ts";
+import type { Candidates, IdeaTimeline } from "../src/core/types.ts";
+import type { Tree } from "../src/measure/facts.ts";
 
 const ok = { id: "a", text: "做 A", target: "src/a.js", fact: { type: "path-exists" } };
 
@@ -111,7 +111,7 @@ test("端到端：想法从未完成到完成，又被删掉退回；边界先�
         { id: "mentions", text: "文档提到 x", target: "x", fact: { type: "text-in-file", file: "x.txt" } },
       ]),
     );
-    runLaminae(repo, "src/ideas.ts");
+    runLaminae(repo, "src/ideas/ideas.ts");
 
     const [feature, noExtra, mentions] = timeline(repo);
     assert.deepEqual(mentions!.evidence, ["x.txt"], "text-in-file 的证据文件要带出来，图上靠它把想法挂到模块");
@@ -135,7 +135,7 @@ test("端到端：没有 ideas.json 时跳过，并清掉上一次留下的旧�
     fs.mkdirSync(path.join(repo.dir, ".laminae", "data"), { recursive: true });
     const stale = path.join(repo.dir, ".laminae", "data", "ideas-timeline.json");
     fs.writeFileSync(stale, "[]");
-    const out = runLaminae(repo, "src/ideas.ts");
+    const out = runLaminae(repo, "src/ideas/ideas.ts");
     assert.match(out, /跳过想法与边界/);
     assert.ok(!fs.existsSync(stale), "旧结果不能混进新报告");
   } finally {
@@ -149,7 +149,7 @@ test("端到端：ideas.json 有错时报出具体位置并失败", () => {
     repo.commit({ "a.txt": "a" });
     fs.mkdirSync(path.join(repo.dir, ".laminae"), { recursive: true });
     fs.writeFileSync(path.join(repo.dir, ".laminae", "ideas.json"), JSON.stringify([{ id: "x" }]));
-    assert.throws(() => runLaminae(repo, "src/ideas.ts"), /ideas\[0\]/);
+    assert.throws(() => runLaminae(repo, "src/ideas/ideas.ts"), /ideas\[0\]/);
   } finally {
     repo.dispose();
   }
@@ -161,7 +161,7 @@ test("端到端：提取路线图清单与 TODO 作为线索，并画出数量�
     repo.commit({ "ROADMAP.md": "- [ ] 想法一\n- [ ] 想法二\n", "src/a.js": "// TODO 补错误处理\n" }, "c0");
     repo.commit({ "ROADMAP.md": "- [x] 想法一\n- [ ] 想法二\n" }, "c1 勾掉一个");
     repo.commit({ "src/a.js": "const a = 1\n" }, "c2 TODO 清掉");
-    runLaminae(repo, "src/ideas.ts");
+    runLaminae(repo, "src/ideas/ideas.ts");
 
     const c = JSON.parse(fs.readFileSync(path.join(repo.dir, ".laminae", "data", "candidates.json"), "utf8")) as Candidates;
     assert.equal(c.checklist.open, 1);
@@ -274,7 +274,7 @@ test("端到端：引用边界——越界、改成别名后测不出来、删�
     const write = (ideas: unknown[]): void => fs.writeFileSync(path.join(repo.dir, ".laminae", "ideas.json"), JSON.stringify(ideas));
 
     write(edgeIdea());
-    runLaminae(repo, "src/ideas.ts");
+    runLaminae(repo, "src/ideas/ideas.ts");
     const [e] = timeline(repo);
     assert.deepEqual(e!.states, [0, 1, 3, 0, 1], "守住 → 越界 → 测不出来（不是守住）→ 守住 → 越界");
     assert.deepEqual(e!.edge, { from: "src/ui", to: "src/server" });
@@ -287,7 +287,7 @@ test("端到端：引用边界——越界、改成别名后测不出来、删�
 
     // 想法形式：ui 应该引用 server
     write(edgeIdea({ boundary: false, id: "wired", expect: "present" }));
-    runLaminae(repo, "src/ideas.ts");
+    runLaminae(repo, "src/ideas/ideas.ts");
     assert.deepEqual(timeline(repo)[0]!.states, [1, 0, 3, 1, 0]);
   } finally {
     repo.dispose();
@@ -300,7 +300,7 @@ test("端到端：引用边界在 HEAD 上判不了时，带出原因，不报�
     repo.commit({ "src/ui/a.ts": "import { db } from '@/server/db'\n", "src/server/db.ts": "export const db = 1\n" }, "c0");
     writeClaims(repo, [{ id: "c", label: "c", file: "src/ui/a.ts", locator: "(db)", fact: { type: "text-in-file", file: "src/ui/a.ts" } }]);
     fs.writeFileSync(path.join(repo.dir, ".laminae", "ideas.json"), JSON.stringify(edgeIdea()));
-    runLaminae(repo, "src/ideas.ts");
+    runLaminae(repo, "src/ideas/ideas.ts");
     const [e] = timeline(repo);
     assert.equal(e!.atHead, 3);
     assert.match(e!.unsure!, /@\/server\/db/);
@@ -327,7 +327,7 @@ test("端到端：monorepo 内部包的引用算越界（@acme/server 指向 pac
       path.join(repo.dir, ".laminae", "ideas.json"),
       JSON.stringify([{ id: "b", text: "ui 不许用 server", fact: { type: "import-edge", from: "packages/ui", to: "packages/server" }, boundary: true }]),
     );
-    runLaminae(repo, "src/ideas.ts");
+    runLaminae(repo, "src/ideas/ideas.ts");
     const [e] = timeline(repo);
     assert.equal(e!.atHead, 1);
     assert.deepEqual(e!.hits, [["packages/ui/a.ts", "packages/server/index.ts"]]);

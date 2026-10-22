@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { findSubRepos, parseRepoList, readReposFile, dedupe } from "../src/repos.ts";
+import { findSubRepos, parseRepoList, readReposFile, dedupe } from "../src/core/repos.ts";
 
 /** 造一个最小仓库：只要 .git 存在就够，findSubRepos 不看里面有什么 */
 function mkRepo(dir: string, kind: "dir" | "file" = "dir"): void {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { suggestClaims } from "../src/suggest.ts";
+import { suggestClaims } from "../src/output/suggest.ts";
 
 test("suggestClaims：下限、近似、命令、精确数各挑一条，并带上人还要改的说明", () => {
   const text = ["提供 1600+ 个图标", "大约 2000 个", "运行 pnpm run docs:dev", "本作共 12 关"].join("\n");

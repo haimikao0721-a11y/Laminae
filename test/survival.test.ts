@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { kaplanMeier, summarizeClosure } from "../src/survival.ts";
-import type { Obs } from "../src/survival.ts";
+import { kaplanMeier, summarizeClosure } from "../src/judge/survival.ts";
+import type { Obs } from "../src/judge/survival.ts";
 import { LEVELS_CLAIM, readme, runFile, runLaminae, sys, TestRepo, writeClaims } from "./helpers.ts";
 
 const ev = (...t: number[]): Obs[] => t.map((time) => ({ time, event: true }));

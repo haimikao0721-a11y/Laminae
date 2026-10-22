@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { indexPackages, isCodeFile, isTestFile, packageNameOf, parseBareSpecs, parseFileImports, parseImportLine, resolveBareSpecs, resolveImports, resolveJs, resolvePython } from "../src/imports.ts";
-import type { ResolveEnv } from "../src/imports.ts";
+import { indexPackages, isCodeFile, isTestFile, packageNameOf, parseBareSpecs, parseFileImports, parseImportLine, resolveBareSpecs, resolveImports, resolveJs, resolvePython } from "../src/layers/imports.ts";
+import type { ResolveEnv } from "../src/layers/imports.ts";
 
 const env = (files: string[], pkgs: Record<string, string> = {}): ResolveEnv => ({
   files: new Set(files),

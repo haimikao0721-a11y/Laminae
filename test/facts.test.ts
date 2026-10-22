@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeFact, evalFact, globToRegExp, isObserved, isReferential, parseFact } from "../src/facts.ts";
-import type { Tree } from "../src/facts.ts";
+import { describeFact, evalFact, globToRegExp, isObserved, isReferential, parseFact } from "../src/measure/facts.ts";
+import type { Tree } from "../src/measure/facts.ts";
 
 /** 用内存里的文件表充当某个 commit 的文件树 */
 function tree(files: Record<string, string>): Tree {
