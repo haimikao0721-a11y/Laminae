@@ -921,13 +921,23 @@ export function joinLayers(data: LayersData, upper: readonly UpperLayer[]): Laye
   // 孤立 = 没有引用边，也不是按约定加载，也没有任何入口证据。
   // 前两条以前就有；第三条是这一版新增的 —— 「没有入边」在库项目里几乎总是「这是出口」，
   // 不是缺陷。有证据的单独放进 entry，报告里能看到它是靠什么被排除的。
+  // 只报**现在**还成立的。
+  //
+  // unrefFlags 是按 commit 记的，intervals() 会把「曾经没人引用」的区间全部留下。
+  // 一个文件在早期没人引用、后来被引用了，照样会出现在列表里。
+  // vue 上这条让 170 条孤立里有 119 条是历史路径 —— 那些文件在 HEAD 上根本不存在了。
+  // 和「往下看一层」是同一个毛病，那里已经加过 atHead，这里补上。
+  const lastCommit = Math.max(0, data.commits - 1);
+  const aliveNow = (x: { alive: Interval[] }): boolean => x.alive.some(([, b]) => b >= lastCommit);
+
   const entryBy = new Map(data.entry.map((e) => [e.file, e.why]));
-  const orphans = data.unreferenced.filter((u) => !mentioned.has(u.file) && !entryBy.has(u.file));
-  const entry = data.entry.filter((e) => !mentioned.has(e.file));
+  const orphans = data.unreferenced.filter(
+    (u) => !mentioned.has(u.file) && !entryBy.has(u.file) && aliveNow(u),
+  );
+  const entry = data.entry.filter((e) => !mentioned.has(e.file) && aliveNow(e));
 
   // 只存在于历史的条目不能当成当前问题。click 上 100 条里有 53 条是 2014 年的骨架，
   // 和现存的 47 条混在一起，前 40 条截断后全是历史噪声。
-  const lastCommit = Math.max(0, data.commits - 1);
   const down = data.down.map((d) => ({
     ...d,
     atHead: d.alive.some(([, b]) => b >= lastCommit),

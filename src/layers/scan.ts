@@ -228,6 +228,19 @@ export interface EntryPoint {
 /** 演示、工具、文档这类目录下的文件，用途是被人执行或被工具加载，不是被 import */
 export const ENTRY_DIR = /^(?:examples?|samples?|demos?|scripts?|bin|tools?|hack|benchmarks?|docs?|contrib|docs-src)\//;
 
+/**
+ * 被工具**按文件名**加载的东西。它们从不被应用代码 import，但每一个都是活的。
+ *
+ * 这三类是在 vue 上补的：170 条孤立降到 31 条之后，剩下的全是它们 ——
+ *   vitest.config.ts / eslint.config.js / vite.config.ts   工具按约定找配置
+ *   __benchmarks__/*.bench.ts                              vitest bench 按后缀找
+ *   dts-test/*.test-d.ts                                   由 tsc 直接做类型检查
+ *
+ * 判据是后缀和目录名，不是「猜」。工具确实就是这么找它们的。
+ */
+const TOOL_LOADED = /(?:^|\/)(?:[\w.-]+\.config\.[cm]?[jt]s|[^/]+\.bench\.[cm]?[jt]s|[^/]+\.test-d\.tsx?|[^/]+\.d\.ts)$/;
+const BENCH_DIR = /(?:^|\/)(?:__benchmarks__|benchmarks?|bench)\//;
+
 /** 从清单里取出声明为入口的路径。认不出返回空数组，不抛错 */
 function manifestEntries(file: string, text: string): string[] {
   const out: string[] = [];
@@ -302,6 +315,14 @@ function entryPoints(
   const haystack = hay.join("\n");
 
   for (const f of snap.code) {
+    if (TOOL_LOADED.test(f)) {
+      out.set(f, "工具按文件名加载它（配置 / 基准 / 类型测试），应用代码不会 import");
+      continue;
+    }
+    if (BENCH_DIR.test(f)) {
+      out.set(f, "在基准测试目录下，由测试工具按后缀收集");
+      continue;
+    }
     if (ENTRY_DIR.test(f)) {
       out.set(f, `在 ${f.split("/")[0]}/ 下：演示、工具或文档目录，用途是被执行或被加载`);
       continue;
