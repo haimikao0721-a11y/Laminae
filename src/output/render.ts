@@ -9,7 +9,9 @@
  *
  * 产物：<目标仓库>/laminae.html
  */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { assertBoundRepo } from "../core/config.ts";
 import { ensureExcluded } from "../core/exclude.ts";
@@ -20,7 +22,14 @@ import type { Interval, LayerReport, Outcome, Payload } from "../core/types.ts";
 
 assertBoundRepo();
 
-const dataPath = PAYLOAD_PATH;
+// 允许指定数据与落盘位置。校验要用：拿同一份 payload 重渲一遍，
+// 逐字节和已有产物比 —— 不一致就说明这个 HTML 不是从数据算出来的。
+const argOf = (name: string): string | undefined => {
+  const i = process.argv.indexOf(name);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+};
+const dataPath = argOf("--payload") ?? PAYLOAD_PATH;
+const htmlPath = argOf("--out") ?? HTML_PATH;
 const jsPath = path.join(SKILL_ROOT, "dist", "app.js");
 const cssPath = path.join(SKILL_ROOT, "web", "style.css");
 
@@ -30,6 +39,16 @@ for (const p of [dataPath, jsPath, cssPath]) {
     process.exit(1);
   }
 }
+
+// 渲染器指纹：产物记下自己是哪个版本的渲染器生成的。
+// 校验时如果对不上，只说明「报告比渲染器旧」，不能说成「有人改过」——
+// 每次都喊狼来了，这个检查很快就没人看了。
+const rendererFp = createHash("sha1")
+  .update(fs.readFileSync(jsPath))
+  .update(fs.readFileSync(cssPath))
+  .update(fs.readFileSync(fileURLToPath(import.meta.url)))
+  .digest("hex")
+  .slice(0, 16);
 
 const payload = JSON.parse(fs.readFileSync(dataPath, "utf8")) as Payload;
 const appJs = fs.readFileSync(jsPath, "utf8");
@@ -286,6 +305,7 @@ function licenseNotice(): string {
 const html = `<!doctype html>
 <html lang="zh-CN" data-theme="auto">
 <head>
+<meta name="laminae-renderer" content="${rendererFp}">
 <meta charset="utf-8">
 ${licenseNotice()}
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -405,8 +425,8 @@ ${appJs}
 `;
 
 ensureExcluded();
-fs.mkdirSync(path.dirname(HTML_PATH), { recursive: true });
-fs.writeFileSync(HTML_PATH, html, "utf8");
+fs.mkdirSync(path.dirname(htmlPath), { recursive: true });
+fs.writeFileSync(htmlPath, html, "utf8");
 
 const kb = (n: number): string => (n / 1024).toFixed(1) + " KB";
 console.log("已生成单文件 HTML");

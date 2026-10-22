@@ -143,3 +143,15 @@ What each of the five commands answers, and how src should be grouped, is in [LA
 
 
 At each commit every claim has one of four states: true, false, not written yet (gray), unmeasurable. A consecutive stretch of false is a false run, whose length is the hiatus, and it is classified by closure method. The meaning of each outcome is in [SPEC.md](SPEC.en.md).
+
+## Is this report fabricated
+
+A report can be faked, and both ways look convincing: edit the numbers in the HTML directly, or skip the pipeline and hand-write a payload.
+
+`scripts/verify.ts` defeats both with one rule: **everything must be recomputable from the source.**
+
+  1. Re-render the HTML from the payload and compare byte for byte. A hand-edited report does not match, and the output tells you which character and what surrounds it.
+  2. Recompute each claim's state at HEAD, the commit count and the HEAD id from git. A fabricated payload does not match.
+  3. The summary numbers must agree with the per-claim numbers. People who fake usually change the visible total and forget the detail.
+
+One caveat: the report records which renderer version produced it (`laminae-renderer` in the HTML head). When that version differs, replay is skipped with a warning — it means the report is older than the renderer, not that anyone edited it. **Cry wolf every time and nobody reads the check any more.**

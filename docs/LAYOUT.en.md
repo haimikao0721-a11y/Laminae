@@ -15,6 +15,7 @@ Five entry points, all run inside the target repository.
 | `scripts/trace.ts` | What is the call path from an entry point down to a stub | No |
 | `scripts/branches.ts` | Is there a branch where this is already fixed but unmerged | No |
 | `scripts/merges.ts` | Did a merge lose a fix | No |
+| `scripts/verify.ts` | **Is this report fabricated** | No |
 
 **The last four are read-only**, and all read git objects directly without touching the working tree (except command facts such as `test-passes`, which need a temporary worktree).
 
