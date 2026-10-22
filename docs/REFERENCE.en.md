@@ -154,4 +154,6 @@ A report can be faked, and both ways look convincing: edit the numbers in the HT
   2. Recompute each claim's state at HEAD, the commit count and the HEAD id from git. A fabricated payload does not match.
   3. The summary numbers must agree with the per-claim numbers. People who fake usually change the visible total and forget the detail.
 
+This check is already wired in as the final step of `run`: every report is verified as it is produced, and a failure makes the exit code non-zero. To check an older report on its own, use `--run <id>`.
+
 One caveat: the report records which renderer version produced it (`laminae-renderer` in the HTML head). When that version differs, replay is skipped with a warning — it means the report is older than the renderer, not that anyone edited it. **Cry wolf every time and nobody reads the check any more.**
