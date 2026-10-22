@@ -133,4 +133,7 @@ Two hints, neither of which changes the verdict — they only point at what look
 
 ## How to read the results
 
+What each of the five commands answers, and how src should be grouped, is in [LAYOUT.md](LAYOUT.en.md).
+
+
 At each commit every claim has one of four states: true, false, not written yet (gray), unmeasurable. A consecutive stretch of false is a false run, whose length is the hiatus, and it is classified by closure method. The meaning of each outcome is in [SPEC.md](SPEC.en.md).
