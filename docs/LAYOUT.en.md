@@ -17,6 +17,8 @@ Five entry points, all run inside the target repository.
 | `scripts/merges.ts` | Did a merge lose a fix | No |
 | `scripts/verify.ts` | **Is this report fabricated** | No |
 
+`verify` is already wired in as the last step of the `run` pipeline: every report is checked as it is produced, and a failure makes the exit code non-zero. **Nothing depends on someone remembering to run it.**
+
 **The last four are read-only**, and all read git objects directly without touching the working tree (except command facts such as `test-passes`, which need a temporary worktree).
 
 ## How they relate

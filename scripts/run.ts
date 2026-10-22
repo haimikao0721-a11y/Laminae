@@ -267,6 +267,22 @@ async function runRepo(spec: RepoSpec, passArgs: string[]): Promise<{ ok: boolea
     }
     if (VERBOSE) emitLog(spec, r);
   }
+
+  // 最后一步：校验产物。
+  //
+  // 放在流水线里的理由：**不依赖人记得去跑**。报告可以被伪造 —— 手改 HTML，
+  // 或者不跑流水线直接写 payload。放在这里，伪造的产物当场退出码非 0，
+  // 而不是等到有人想起来才去查。
+  //
+  // 这一步会重新渲染一遍（一份报告几十毫秒），比它挡住的麻烦便宜得多。
+  const v = await runStep(spec.abs, "scripts/verify.ts", []);
+  if (!v.ok) {
+    emitLog(spec, v);
+    emitErr(spec, "「校验产物」不通过：这份报告不能当作仓库的真实情况");
+    return { ok: false, seconds: (Date.now() - t0) / 1000 };
+  }
+  if (VERBOSE) emitLog(spec, v);
+
   const seconds = (Date.now() - t0) / 1000;
   return { ok: true, seconds };
 }
