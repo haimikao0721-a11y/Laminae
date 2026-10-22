@@ -93,6 +93,8 @@
 - 孤立模块把 `index`、`main`、`cli`、`app`、`server`、`mod`、`__init__`、`__main__` 和 `bin/`、`cmd/` 下的文件当入口，不算孤立。被测试引用的文件也不算。
 - 没有 import 边、但**文件名在别的文件正文里作为字面量出现过**的，记为「按约定加载」，不算孤立。依据是这三类东西在静态图上一条边都没有：`package.json` 的 `scripts` 按路径调用的脚本、页面里 `<script src>` 引用的资产、模板串拼出来的路径（``` `renderers/${type}/render-${type}.mjs` ```）。名字短于 5 个字符的不算，否则 `index.js` 一类的名字会把真的孤立盖住。只在测试文件里被提到也算数。
 - 这一档的代价要说清楚：**它只能证明「有人按名字引用过」，不能证明「真的跑得到」**。名字写错、引用了已删除的文件，都会看起来像在用。
+- **有入口证据的不算孤立，理由跟着一起输出。** 这一条是在真实仓库上补的：click 报出 15 条孤立，15 条全错——12 条在 `examples/` 下（给人执行的示例），2 条在 `docs/` 下（给 Sphinx 加载的配置），1 条是 `src/click/testing.py`（库的公开模块，给使用者 import 的）。认的证据只有四种，都是仓库里明写的：目录角色（`examples/`、`docs/`、`scripts/`、`bin/`、`tools/` 等）、Python 包归属（同级有 `__init__.py`）、清单声明（`package.json` 的 `bin`/`main`、`pyproject.toml` 的入口点、`Cargo.toml` 的 `path`）、文件开头是 `#!`。这四种里没有一条依赖「文件名看起来像什么」。
+- 为什么这条重要：**在库项目里，「一个模块没有内部引用」常常意味着它是出口，不是入口。** 把结构事实当成缺陷，是这一档最容易犯的错。改完之后 click 从 15 条降到 0，archify 从 4 条降到 3 条（少的那条开头是 `#!`，是脚本），剩下 3 条是真的没人用。
 - 契约目前只有 HTTP 路径一种。路由声明认 `app` / `router` 一类的 `.get("/x")` 和 Python 的 `@router.get("/x")`、`@app.route("/x")`，引用认 `fetch("/x")` 和 `axios.get("/x")`。`APIRouter(prefix="/users")` 与 `include_router(router, prefix="/api/v1")` 会拼成 `/api/v1/users/...`，`from users import router` 这种跨文件挂载也拼。带变量的路径（`` `/api/${id}` ``）对不上，直接跳过。
 - 仓库里没有任何路由声明时，`fetch` 调用不判为洞：分不清是在调外部服务，还是本仓库没实现。反过来，只有声明没有调用也不判，调用方可以在仓库外。
 - 注入线索认 `eval(`、`new Function(`、`child_process`、`.innerHTML`、`dangerouslySetInnerHTML`、`os.system(`、`subprocess`、`document.write(`。出现不等于能被利用，页面上标的是线索。

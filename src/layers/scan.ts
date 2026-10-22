@@ -203,6 +203,132 @@ function conventionRefs(
   return out;
 }
 
+/* ── 入口点：为什么一个文件没有入边却不是孤立 ──
+ *
+ * 「没有别的模块 import 它」是个中性的结构事实，不是一个缺陷。真实仓库里至少三类文件
+ * 天生就没有入边，而且它们恰恰是仓库里最正常的部分：
+ *
+ *   1. 演示与工具脚本   examples/*、scripts/*   —— 给人执行的，不是给代码 import 的
+ *   2. 文档构建配置     docs/conf.py            —— 给 Sphinx 加载的
+ *   3. 库的公开模块     src/click/testing.py    —— 给**使用者** import 的，库自己不用
+ *
+ * 第三类最容易读反：在库里，一个模块没有内部引用，常常意味着「这是出口，不是入口」。
+ *
+ * 所以这里不猜，只认仓库里明写的声明。一条都对不上的，才留在孤立里。
+ *
+ * 每一条都是可核对的：目录名、__init__.py 在不在、清单里有没有写、文件开头是不是 #!。
+ * 没有一条依赖「这个文件名看起来像什么」。
+ */
+export interface EntryPoint {
+  file: string;
+  /** 为什么说它是入口。这句话会原样出现在报告里，要能被人核对 */
+  why: string;
+}
+
+/** 演示、工具、文档这类目录下的文件，用途是被人执行或被工具加载，不是被 import */
+const ENTRY_DIR = /^(?:examples?|samples?|demos?|scripts?|bin|tools?|hack|benchmarks?|docs?|contrib|docs-src)\//;
+
+/** 从清单里取出声明为入口的路径。认不出返回空数组，不抛错 */
+function manifestEntries(file: string, text: string): string[] {
+  const out: string[] = [];
+  const base = file.slice(file.lastIndexOf("/") + 1);
+
+  if (base === "package.json") {
+    try {
+      const j = JSON.parse(text) as Record<string, unknown>;
+      const bin = j["bin"];
+      if (typeof bin === "string") out.push(bin);
+      else if (bin && typeof bin === "object") for (const v of Object.values(bin)) if (typeof v === "string") out.push(v);
+      if (typeof j["main"] === "string") out.push(j["main"]);
+    } catch {
+      // 清单坏了就不当证据
+    }
+    return out;
+  }
+
+  if (base === "pyproject.toml" || base === "setup.cfg") {
+    // [project.scripts] / [options.entry_points] 下面的 name = "module:func"
+    // module 部分转成路径，别的语法一律忽略
+    for (const m of text.matchAll(/=\s*["']([A-Za-z_][\w.]*)\s*:/g)) out.push(m[1]!.replace(/\./g, "/"));
+    return out;
+  }
+
+  if (base === "Cargo.toml") {
+    for (const m of text.matchAll(/^\s*path\s*=\s*["']([^"']+\.rs)["']/gm)) out.push(m[1]!);
+    return out;
+  }
+  return out;
+}
+
+/**
+ * 找出有入口证据的文件。返回值是 file -> 理由。
+ *
+ * 顺序有意这样排：先说更硬的理由。目录角色和包归属是结构性的，清单是显式声明，
+ * 被文档点名是最弱的一条 —— 它只证明有人提过这个名字。
+ */
+function entryPoints(
+  snap: { files: ReadonlyMap<string, string>; code: readonly string[]; declares: readonly string[]; pkgs: readonly string[] },
+  info: ReadonlyMap<string, BlobInfo>,
+  declaresText: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+
+  // 哪些目录是 Python 包（含 __init__.py）。包内模块对使用者是公开的
+  const pkgDirs = new Set<string>();
+  for (const f of snap.files.keys()) {
+    if (f === "__init__.py") pkgDirs.add("");
+    else if (f.endsWith("/__init__.py")) pkgDirs.add(f.slice(0, f.lastIndexOf("/")));
+  }
+
+  // 清单里声明为入口的路径（去掉前导 ./）
+  const declared = new Set<string>();
+  for (const f of snap.pkgs) {
+    const t = declaresText.get(snap.files.get(f) ?? "");
+    if (t) for (const p of manifestEntries(f, t)) declared.add(p.replace(/^\.\//, "").replace(/\/+$/, ""));
+  }
+  for (const f of snap.declares) {
+    const base = f.slice(f.lastIndexOf("/") + 1);
+    if (base !== "pyproject.toml" && base !== "setup.cfg" && base !== "Cargo.toml") continue;
+    const t = declaresText.get(snap.files.get(f) ?? "");
+    if (t) for (const p of manifestEntries(f, t)) declared.add(p.replace(/^\.\//, "").replace(/\/+$/, ""));
+  }
+
+  // 被文档点名的：所有文档正文拼起来查文件名，和按约定加载用的是同一份材料
+  const hay: string[] = [];
+  for (const f of snap.declares) {
+    const t = declaresText.get(snap.files.get(f) ?? "");
+    if (t) hay.push(t);
+  }
+  const haystack = hay.join("\n");
+
+  for (const f of snap.code) {
+    if (ENTRY_DIR.test(f)) {
+      out.set(f, `在 ${f.split("/")[0]}/ 下：演示、工具或文档目录，用途是被执行或被加载`);
+      continue;
+    }
+    const dir = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "";
+    if (pkgDirs.has(dir) || [...pkgDirs].some((d) => d !== "" && dir.startsWith(`${d}/`))) {
+      out.set(f, "属于 Python 包内的模块，使用者可以直接 import，库自己不引用是正常的");
+      continue;
+    }
+    // 清单里写的可能是目录（入口是个包），也可能是文件
+    if ([...declared].some((p) => p !== "" && (f === p || f.startsWith(`${p}/`)))) {
+      out.set(f, "在清单里被声明为入口");
+      continue;
+    }
+    const body = info.get(snap.files.get(f) ?? "")?.text ?? "";
+    if (/^#!/.test(body)) {
+      out.set(f, "文件开头是 #!，是被直接执行的");
+      continue;
+    }
+    const base = f.slice(f.lastIndexOf("/") + 1);
+    if (base.length >= 5 && haystack.includes(base)) {
+      out.set(f, "被文档或配置按文件名点名");
+    }
+  }
+  return out;
+}
+
 export interface CommitScan {
   /** 该 commit 上的代码文件与它们之间的引用。代码没变的相邻 commit 共用同一个对象 */
   graph: CommitGraph;
@@ -318,6 +444,8 @@ export class ImportScanner {
       ...(d.imported ? { imported: d.imported } : {}),
     }));
     layer.convention = conventionRefs(snap, edges, this.infoByBlob, this.declaresText);
+    // 入口点：有明写证据的，不算孤立。理由一并带上，报告里要能被人核对
+    layer.entry = [...entryPoints(snap, this.infoByBlob, this.declaresText)].map(([file, why]) => ({ file, why }));
     return { graph: { files: snap.code, edges }, unresolved, layer };
   }
 

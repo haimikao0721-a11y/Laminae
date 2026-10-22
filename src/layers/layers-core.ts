@@ -395,6 +395,8 @@ export interface CommitLayer {
   unsupported?: string[];
   /** 没有 import 边，但文件名在别的文件正文里作为字面量出现过（按约定加载）。不算孤立 */
   convention?: string[];
+  /** 有入口证据的文件：[文件, 理由]。这些不算孤立 */
+  entry?: { file: string; why: string }[];
 }
 
 export const EMPTY_COMMIT_LAYER: CommitLayer = { stubs: [], facts: [], declares: [], references: [], clues: [] };
@@ -420,6 +422,8 @@ export interface LayersData {
   unreferenced: { file: string; alive: Interval[] }[];
   /** 没有 import 边，但文件名在别的文件正文里出现过：按约定加载的脚本、页面资产、插件。不算孤立 */
   convention: { file: string; alive: Interval[] }[];
+  /** 没有引用边、但有入口证据的文件。它们不是孤立，理由就在 why 里 */
+  entry: { file: string; why: string; alive: Interval[] }[];
   contracts: ContractKind[];
   clues: { kind: string; file: string; alive: Interval[] }[];
   /** 认得出扩展名、但没有语法模块 */
@@ -506,9 +510,12 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
   const unrefKeys = new Set<string>();
   const convKeys = new Set<string>();
   const clueKeys = new Set<string>();
+  /** 有入口证据的文件 -> 理由。只留最后一次见到的理由：证据不会随时间变得更弱 */
+  const entryWhy = new Map<string, string>();
   commits.forEach((c) => {
     for (const f of c.layer.stubs) stubKeys.add(f);
     for (const f of c.layer.convention ?? []) convKeys.add(f);
+    for (const e of c.layer.entry ?? []) entryWhy.set(e.file, e.why);
     for (const f of c.files) if (!isTestFile(f) && !isEntryPoint(f)) unrefKeys.add(f);
     for (const cl of c.layer.clues) clueKeys.add(`${cl.kind}\u0000${cl.file}`);
   });
@@ -721,6 +728,9 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
     testOnly: intervals(testFlags).map(({ key, alive }) => ({ file: key, alive })),
     unreferenced: intervals(unrefFlags).map(({ key, alive }) => ({ file: key, alive })),
     convention: intervals(convFlags).map(({ key, alive }) => ({ file: key, alive })),
+    entry: intervals(unrefFlags)
+      .filter(({ key }) => entryWhy.has(key))
+      .map(({ key, alive }) => ({ file: key, why: entryWhy.get(key)!, alive })),
     contracts: [...kinds].sort().map((kind) => ({
       kind,
       declared: toIntervals(declaredFlags.get(kind)!),
@@ -766,6 +776,8 @@ export interface LayerReport {
   orphans: { file: string; alive: Interval[] }[];
   /** 没有 import 边，但文件名在别的文件正文里出现过：按约定加载的脚本、页面资产、插件。不算孤立 */
   convention: { file: string; alive: Interval[] }[];
+  /** 没有 import 边，但有入口证据（目录角色、包归属、清单声明、shebang）。不是孤立，理由在 why 里 */
+  entry: { file: string; why: string; alive: Interval[] }[];
   contracts: ContractKind[];
   clues: { kind: string; file: string; alive: Interval[] }[];
   unsupported: { file: string; alive: Interval[] }[];
@@ -894,7 +906,12 @@ export function joinLayers(data: LayersData, upper: readonly UpperLayer[]): Laye
   }
 
   const mentioned = new Set(upper.flatMap((u) => u.files));
-  const orphans = data.unreferenced.filter((u) => !mentioned.has(u.file));
+  // 孤立 = 没有引用边，也不是按约定加载，也没有任何入口证据。
+  // 前两条以前就有；第三条是这一版新增的 —— 「没有入边」在库项目里几乎总是「这是出口」，
+  // 不是缺陷。有证据的单独放进 entry，报告里能看到它是靠什么被排除的。
+  const entryBy = new Map(data.entry.map((e) => [e.file, e.why]));
+  const orphans = data.unreferenced.filter((u) => !mentioned.has(u.file) && !entryBy.has(u.file));
+  const entry = data.entry.filter((e) => !mentioned.has(e.file));
 
   const down = data.down.map((d) => ({
     ...d,
@@ -908,6 +925,7 @@ export function joinLayers(data: LayersData, upper: readonly UpperLayer[]): Laye
     covers,
     unproven,
     orphans,
+    entry,
     // 被说法或想法提到的不再叫「按约定」——那已经是明确的证据了
     convention: data.convention.filter((c) => !mentioned.has(c.file)),
     contracts: data.contracts,
