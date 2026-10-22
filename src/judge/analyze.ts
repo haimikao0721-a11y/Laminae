@@ -34,15 +34,21 @@ interface FactsFile {
   commitCount: number;
   commits: MeasuredCommit[];
 }
-interface DocBody {
-  sha: string;
-  short: string;
-  /** 文件路径 → 该 commit 上的正文；读不到的文件为空串 */
-  files: Record<string, string>;
+interface DocsFile {
+  texts: string[];
+  commits: { sha: string; short: string; files: Record<string, number> }[];
 }
 
+/** 取某个 commit 上某个文档的正文。那个 commit 上文件还不存在时返回 null */
+const docBodyOf = (entry: { files: Record<string, number> }, file: string): string | null =>
+  Object.hasOwn(entry.files, file) ? (docTexts[entry.files[file]!] ?? null) : null;
+
+
 const factsFile = JSON.parse(fs.readFileSync(path.join(DATA, "facts.json"), "utf8")) as FactsFile;
-const docBodies = JSON.parse(fs.readFileSync(path.join(DATA, "docs-by-commit.json"), "utf8")) as DocBody[];
+// 正文按编号存，同一份内容只落盘一次。见 measure.ts 里的说明。
+const docsFile = JSON.parse(fs.readFileSync(path.join(DATA, "docs-by-commit.json"), "utf8")) as DocsFile;
+const docTexts = docsFile.texts;
+const docBodies = docsFile.commits;
 let claims: ClaimDef[];
 try {
   claims = loadClaims(CLAIMS_PATH);
@@ -53,8 +59,8 @@ try {
 
 // 说法体检：有些说法根本写不出来，却会静默判成「尚未写入文档」。
 // 在出结论之前先报出来，免得把「我没测」当成「文档没写」。
-const headDocs = docBodies.length > 0 ? docBodies[docBodies.length - 1]!.files : {};
-const claimWarnings = lintClaimsFile(CLAIMS_PATH, claims, (f) => (Object.hasOwn(headDocs, f) ? headDocs[f]! : null));
+const headEntry = docBodies.length > 0 ? docBodies[docBodies.length - 1]! : { files: {} };
+const claimWarnings = lintClaimsFile(CLAIMS_PATH, claims, (f) => docBodyOf(headEntry, f));
 if (claimWarnings.length > 0) console.log(formatWarnings(claimWarnings) + "\n");
 
 const commits = factsFile.commits;
@@ -76,11 +82,12 @@ function judge(claim: ClaimDef): Judged & { texts: (string | null)[]; inexact: s
   /** 引用文本或口径词 → 编号，同一段文本编号相同，供结局判定看声称有没有改过 */
   const textIds = new Map<string, number>();
   /** 测试 / 不变量：说法文件（或 fact.source）正文 → 编号。改断言会换编号，改被测代码不会 */
-  const bodyIds = new Map<string, number>();
+  const bodyIds = new Map<number, number>();
   const aligned = stable
     ? alignToBaseline(
         commits.map((c) => {
-          const body = docOf.get(c.sha)?.files[claim.file] ?? "";
+          const entry = docOf.get(c.sha);
+          const body = entry ? (docBodyOf(entry, claim.file) ?? "") : "";
           const m = body ? re.exec(body) : null;
           return m?.[1]?.trim() || null;
         }),
@@ -102,7 +109,7 @@ function judge(claim: ClaimDef): Judged & { texts: (string | null)[]; inexact: s
       console.error(`${claim.id}：测量数据里没有这条说法的事实。claims.json 改过，请重新运行 measure.ts`);
       process.exit(1);
     }
-    const body = doc.files[claim.file];
+    const body = docBodyOf(doc, claim.file);
     const m = body ? re.exec(body) : null;
     const raw = m?.[1]?.trim();
 

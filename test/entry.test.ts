@@ -65,3 +65,21 @@ test("入口点：判据是目录角色，不是文件名", () => {
   assert.deepEqual(report.orphans.map((o) => o.file), ["src/tool.py"]);
   assert.deepEqual(report.entry.map((e) => e.file), ["examples/tool.py"]);
 });
+
+
+test("孤立：只在历史上没人引用的，不算现在的孤立", () => {
+  // vue 上这条让 170 条孤立里有 119 条是历史路径 —— 那些文件在 HEAD 上根本不存在了。
+  // 和「往下看一层」是同一个毛病：报的是「曾经没人引用」，不是「现在没人引用」。
+  const early = { files: ["src/old.ts", "src/live.ts"] };
+  const late = { files: ["src/live.ts"] }; // old.ts 被删了
+  const data = buildLayers([
+    { ...early, edges: [], layer: layer({}) },
+    { ...late, edges: [], layer: layer({}) },
+  ]);
+  const report = joinLayers(data, []);
+  assert.deepEqual(
+    report.orphans.map((o) => o.file),
+    ["src/live.ts"],
+    "已经不在仓库里的文件不该出现在孤立清单里",
+  );
+});

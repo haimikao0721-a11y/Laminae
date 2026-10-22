@@ -72,7 +72,24 @@ const docFiles = [
 const locators = new Map(claims.map((c) => [c.id, new RegExp(c.locator)]));
 
 const measured: MeasuredCommit[] = [];
-const docBodies: { sha: string; short: string; files: Record<string, string> }[] = [];
+// 文档正文按内容去重。
+  //
+  // 原来每个 commit 都存一份全文，在 vue 上直接爆了：6513 个 commit × 一份 900 KB 的
+  // CHANGELOG ≈ 1 GB，JSON.stringify 抛 RangeError: Invalid string length（V8 单串上限）。
+  // 而同样的正文按内容去重之后只有 47 MB —— README 55 个版本，CHANGELOG 315 个。
+  //
+  // 现在 files 里存的是正文的编号，正文本身在 docTexts 里各存一份。
+  const docTextId = new Map<string, number>();
+  const docTexts: string[] = [];
+  const textId = (t: string): number => {
+    const hit = docTextId.get(t);
+    if (hit !== undefined) return hit;
+    const id = docTexts.length;
+    docTexts.push(t);
+    docTextId.set(t, id);
+    return id;
+  };
+  const docBodies: { sha: string; short: string; files: Record<string, number> }[] = [];
 
 const observed = claims.filter((c) => isObserved(c.fact));
 const work = observed.length > 0 ? openWorktree(REPO) : null;
@@ -98,9 +115,9 @@ try {
   for (const c of commits) {
     const tree = trees.at(c.sha, pickFiles);
 
-    // 文档正文单独存，避免 facts.json 过大。该 commit 上读不到的文件记为空串。
-    const files: Record<string, string> = {};
-    for (const f of docFiles) files[f] = tree.read(f) ?? "";
+    // 文档正文单独存，避免 facts.json 过大。files 里存的是正文编号，正文在 docTexts 里各存一份。
+    const files: Record<string, number> = {};
+    for (const f of docFiles) files[f] = textId(tree.read(f) ?? "");
     docBodies.push({ sha: c.sha, short: c.short, files });
 
     const values: Record<string, number | null> = {};
@@ -121,7 +138,7 @@ try {
         if (step.ran) console.log(`  跑 ${claim.label} @ ${c.short}`);
       } else if (isReferential(claim.fact)) {
         // 引用型：事实取决于文档在该 commit 上写的是什么，先把文档里的引用文本取出来
-        const m = locators.get(claim.id)!.exec(files[claim.file] ?? "");
+        const m = locators.get(claim.id)!.exec(tree.read(claim.file) ?? "");
         values[claim.id] = evalFact(claim.fact, tree, m?.[1] ?? null);
       } else {
         values[claim.id] = evalFact(claim.fact, tree);
@@ -146,7 +163,7 @@ fs.writeFileSync(
   JSON.stringify({ repo: REPO, generatedAt: new Date().toISOString(), commitCount: commits.length, commits: measured }, null, 2) + "\n",
   "utf8",
 );
-fs.writeFileSync(path.join(DATA_DIR, "docs-by-commit.json"), JSON.stringify(docBodies) + "\n", "utf8");
+fs.writeFileSync(path.join(DATA_DIR, "docs-by-commit.json"), JSON.stringify({ texts: docTexts, commits: docBodies }) + "\n", "utf8");
 
 const first = measured[0];
 const last = measured.at(-1);
