@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { buildLayers, classifyDepth, delegatedCalls, hollowFunctions, isEntryPoint, isStub, joinLayers, mountRoutes, scanFileLayer } from "../src/layers-core.ts";
-import type { CommitLayer, LayerCommit } from "../src/layers-core.ts";
+import { buildLayers, classifyDepth, delegatedCalls, hollowFunctions, isEntryPoint, isStub, joinLayers, mountRoutes, scanFileLayer } from "../src/layers/layers-core.ts";
+import type { CommitLayer, LayerCommit } from "../src/layers/layers-core.ts";
 import { runFile, runLaminae, TestRepo, writeClaims } from "./helpers.ts";
-import type { LayerReport } from "../src/layers-core.ts";
+import type { LayerReport } from "../src/layers/layers-core.ts";
 
 test("isStub：只有注释、空文件、写着没实现的是空壳；有实际代码的不是", () => {
   assert.equal(isStub(""), true);

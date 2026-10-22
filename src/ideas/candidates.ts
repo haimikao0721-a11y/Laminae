@@ -5,7 +5,7 @@
  * 但它们只是线索：没勾选不等于没做（常见的是做完直接删掉清单项），TODO 也可能早就过时。
  * 所以这里只提取与计数，不判定，由人或 agent 确认后写进 ideas.json 才算数。
  */
-import type { Candidate } from "./types.ts";
+import type { Candidate } from "../core/types.ts";
 
 /** git grep 取清单项的扩展正则 */
 export const CHECKLIST_PATTERN = "^[[:space:]]*[-*][[:space:]]+\\[[ xX]\\]";

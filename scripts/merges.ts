@@ -24,10 +24,10 @@
  * 所以这个命令只对 --no-ff 的合并有效，其余在输出里单独计数，不假装查到了。
  */
 import fs from "node:fs";
-import { parseClaims } from "../src/claims.ts";
-import { evalFact, isObserved, isReferential } from "../src/facts.ts";
-import { git, openTrees } from "../src/gitutil.ts";
-import { CLAIMS_PATH } from "../src/paths.ts";
+import { parseClaims } from "../src/measure/claims.ts";
+import { evalFact, isObserved, isReferential } from "../src/measure/facts.ts";
+import { git, openTrees } from "../src/core/gitutil.ts";
+import { CLAIMS_PATH } from "../src/core/paths.ts";
 
 const argv = process.argv.slice(2);
 const flag = (n: string): boolean => argv.includes(n);

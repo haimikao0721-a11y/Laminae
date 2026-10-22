@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { checkRunId, defaultRunId, uniqueRunId, writeLatest, readLatest, listRuns } from "../src/runid.ts";
+import { checkRunId, defaultRunId, uniqueRunId, writeLatest, readLatest, listRuns } from "../src/core/runid.ts";
 
 test("checkRunId：合法的 id", () => {
   for (const id of ["20261020T031422", "before-refactor", "v1.2_after", "a", "a.b-c_d"]) {

@@ -15,14 +15,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadClaims } from "./claims.ts";
-import { assertBoundRepo, REPO, LOG_ARGS, VERBOSE } from "./config.ts";
-import { ensureExcluded } from "./exclude.ts";
+import { assertBoundRepo, REPO, LOG_ARGS, VERBOSE } from "../core/config.ts";
+import { ensureExcluded } from "../core/exclude.ts";
 import { evalFact, factFiles, globToRegExp, isHold, isObserved, isReferential } from "./facts.ts";
-import { git, openTrees } from "./gitutil.ts";
+import { git, openTrees } from "../core/gitutil.ts";
 import { nextObservation, openWorktree, runCommand } from "./observe.ts";
 import type { ObserveCache } from "./observe.ts";
-import { CLAIMS_PATH, DATA_DIR } from "./paths.ts";
-import type { MeasuredCommit } from "./types.ts";
+import { CLAIMS_PATH, DATA_DIR } from "../core/paths.ts";
+import type { MeasuredCommit } from "../core/types.ts";
 
 assertBoundRepo();
 

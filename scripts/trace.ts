@@ -15,11 +15,11 @@
  * agent 拿这条命令自己去看，而不是信这里的结论。
  */
 import fs from "node:fs";
-import { git } from "../src/gitutil.ts";
-import { isCodeFile } from "../src/imports.ts";
-import { delegatedCalls, hollowFunctions } from "../src/layers-core.ts";
-import { BlobReader } from "../src/scan.ts";
-import { pickModule } from "../src/syntax-registry.ts";
+import { git } from "../src/core/gitutil.ts";
+import { isCodeFile } from "../src/layers/imports.ts";
+import { delegatedCalls, hollowFunctions } from "../src/layers/layers-core.ts";
+import { BlobReader } from "../src/layers/scan.ts";
+import { pickModule } from "../src/layers/syntax-registry.ts";
 
 const argv = process.argv.slice(2);
 const flag = (n: string): boolean => argv.includes(n);

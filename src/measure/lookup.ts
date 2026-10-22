@@ -12,14 +12,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseClaims } from "./claims.ts";
-import { judgeState, parseClaimedNumber } from "./classify.ts";
+import { judgeState, parseClaimedNumber } from "../judge/classify.ts";
 import { evalFact, factFiles, isObserved, isReferential } from "./facts.ts";
 import type { Tree } from "./facts.ts";
-import { assertBoundRepo } from "./config.ts";
-import { git, openTrees } from "./gitutil.ts";
-import { CLAIMS_PATH } from "./paths.ts";
-import type { ClaimDef } from "./types.ts";
-import { FALSE, TRUE, UNMEASURED } from "./types.ts";
+import { assertBoundRepo } from "../core/config.ts";
+import { git, openTrees } from "../core/gitutil.ts";
+import { CLAIMS_PATH } from "../core/paths.ts";
+import type { ClaimDef } from "../core/types.ts";
+import { FALSE, TRUE, UNMEASURED } from "../core/types.ts";
 
 export interface HeadLook {
   id: string;

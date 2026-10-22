@@ -14,8 +14,8 @@
  * 图本身可以 Alt + 滚轮缩放，按住空白处拖动平移。
  * 节点位置只在布局切换时重算；换时间点只改颜色，图不会跳。
  */
-import { aliveAt, groupOf } from "../src/graph-util.ts";
-import type { GraphData, Payload } from "../src/types.ts";
+import { aliveAt, groupOf } from "../src/layers/graph-util.ts";
+import type { GraphData, Payload } from "../src/core/types.ts";
 import { layoutCards, layoutGraph, shortLabels } from "./layout.ts";
 import { createRuler, type Ruler } from "./ruler.ts";
 import { commitText, escapeHtml, normPath, timeline } from "./shared.ts";

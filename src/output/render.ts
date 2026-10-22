@@ -11,12 +11,12 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { assertBoundRepo } from "./config.ts";
-import { ensureExcluded } from "./exclude.ts";
-import { HTML_PATH, PAYLOAD_PATH, SKILL_ROOT } from "./paths.ts";
-import { REASON_TEXT } from "./layers-core.ts";
-import { OUTCOME_TEXT } from "./types.ts";
-import type { Interval, LayerReport, Outcome, Payload } from "./types.ts";
+import { assertBoundRepo } from "../core/config.ts";
+import { ensureExcluded } from "../core/exclude.ts";
+import { HTML_PATH, PAYLOAD_PATH, SKILL_ROOT } from "../core/paths.ts";
+import { REASON_TEXT } from "../layers/layers-core.ts";
+import { OUTCOME_TEXT } from "../core/types.ts";
+import type { Interval, LayerReport, Outcome, Payload } from "../core/types.ts";
 
 assertBoundRepo();
 

@@ -23,11 +23,11 @@
  * 一句话：只查「未被 main 包含」的分支，只判事实翻转。
  */
 import fs from "node:fs";
-import { parseClaims } from "../src/claims.ts";
-import { DEFAULT_TOLERANCE } from "../src/compare.ts";
-import { evalFact, isObserved, isReferential } from "../src/facts.ts";
-import { git, openTrees } from "../src/gitutil.ts";
-import { CLAIMS_PATH } from "../src/paths.ts";
+import { parseClaims } from "../src/measure/claims.ts";
+import { DEFAULT_TOLERANCE } from "../src/measure/compare.ts";
+import { evalFact, isObserved, isReferential } from "../src/measure/facts.ts";
+import { git, openTrees } from "../src/core/gitutil.ts";
+import { CLAIMS_PATH } from "../src/core/paths.ts";
 
 const argv = process.argv.slice(2);
 const flag = (n: string): boolean => argv.includes(n);

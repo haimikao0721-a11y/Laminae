@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // src/types.ts
+  // src/core/types.ts
   var TRUE = 0;
   var FALSE = 1;
   var ABSENT = 2;
@@ -17,7 +17,7 @@
     "anomaly": "无故翻转，异常"
   };
 
-  // src/compare.ts
+  // src/measure/compare.ts
   var DEFAULT_TOLERANCE = 0.05;
   function comparePrefix(compare) {
     return compare === "gte" ? "≥ " : compare === "lte" ? "≤ " : compare === "approx" ? "≈ " : "";
@@ -35,7 +35,7 @@
     }
   }
 
-  // src/graph-util.ts
+  // src/layers/graph-util.ts
   function groupOf(file, depth) {
     const dir = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : ".";
     if (dir === ".") return ".";

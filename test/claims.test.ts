@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadClaims, parseClaims } from "../src/claims.ts";
+import { loadClaims, parseClaims } from "../src/measure/claims.ts";
 import { SKILL_ROOT } from "./helpers.ts";
 import path from "node:path";
 

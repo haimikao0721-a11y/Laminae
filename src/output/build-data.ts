@@ -17,17 +17,17 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { assertBoundRepo, REPO, REPO_NAME, REPO_URL, LOG_ARGS } from "./config.ts";
-import { loadClaims } from "./claims.ts";
-import { DEFAULT_TOLERANCE } from "./compare.ts";
-import type { Compare } from "./compare.ts";
-import { describeFact, factFiles } from "./facts.ts";
-import { CLAIMS_PATH, DATA_DIR, PAYLOAD_PATH, RUN_DIR } from "./paths.ts";
-import { didRealityMove, isCensored } from "./classify.ts";
-import { joinLayers } from "./layers-core.ts";
-import type { LayersData } from "./layers-core.ts";
-import { kaplanMeier, summarizeClosure } from "./survival.ts";
-import type { Candidates, ClaimDef, ClaimTimeline, Commit, GraphData, IdeaTimeline, Impact, Outcome, Payload, Run, State, Summary, VerbatimRun } from "./types.ts";
+import { assertBoundRepo, REPO, REPO_NAME, REPO_URL, LOG_ARGS } from "../core/config.ts";
+import { loadClaims } from "../measure/claims.ts";
+import { DEFAULT_TOLERANCE } from "../measure/compare.ts";
+import type { Compare } from "../measure/compare.ts";
+import { describeFact, factFiles } from "../measure/facts.ts";
+import { CLAIMS_PATH, DATA_DIR, PAYLOAD_PATH, RUN_DIR } from "../core/paths.ts";
+import { didRealityMove, isCensored } from "../judge/classify.ts";
+import { joinLayers } from "../layers/layers-core.ts";
+import type { LayersData } from "../layers/layers-core.ts";
+import { kaplanMeier, summarizeClosure } from "../judge/survival.ts";
+import type { Candidates, ClaimDef, ClaimTimeline, Commit, GraphData, IdeaTimeline, Impact, Outcome, Payload, Run, State, Summary, VerbatimRun } from "../core/types.ts";
 
 assertBoundRepo();
 

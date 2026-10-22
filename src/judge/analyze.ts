@@ -11,14 +11,14 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { loadClaims } from "./claims.ts";
-import { isHold, isReferential } from "./facts.ts";
-import { alignToBaseline } from "./observe.ts";
-import { CLAIMS_PATH, DATA_DIR } from "./paths.ts";
-import { ABSENT, FALSE, TRUE, UNMEASURED, OUTCOME_TEXT } from "./types.ts";
-import type { ClaimDef, MeasuredCommit, Outcome, State } from "./types.ts";
-import { assertBoundRepo, VERBOSE } from "./config.ts";
-import { comparePrefix, inexactWording } from "./compare.ts";
+import { loadClaims } from "../measure/claims.ts";
+import { isHold, isReferential } from "../measure/facts.ts";
+import { alignToBaseline } from "../measure/observe.ts";
+import { CLAIMS_PATH, DATA_DIR } from "../core/paths.ts";
+import { ABSENT, FALSE, TRUE, UNMEASURED, OUTCOME_TEXT } from "../core/types.ts";
+import type { ClaimDef, MeasuredCommit, Outcome, State } from "../core/types.ts";
+import { assertBoundRepo, VERBOSE } from "../core/config.ts";
+import { comparePrefix, inexactWording } from "../measure/compare.ts";
 import { classify, isCensored, judgeState, parseClaimedNumber, segment } from "./classify.ts";
 import type { Judged } from "./classify.ts";
 import { kaplanMeier } from "./survival.ts";

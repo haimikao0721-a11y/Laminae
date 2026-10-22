@@ -11,8 +11,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { OUTCOME_TEXT } from "./types.ts";
-import type { Outcome, Payload } from "./types.ts";
+import { OUTCOME_TEXT } from "../core/types.ts";
+import type { Outcome, Payload } from "../core/types.ts";
 
 export interface IndexRepo {
   name: string;

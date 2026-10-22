@@ -15,9 +15,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { assertBoundRepo } from "../src/config.ts";
-import { DERIVE_DIR, acceptBatch, batchAt, ensurePlan, readNotes, readStateOrNull } from "../src/derive.ts";
-import { IDEAS_PATH } from "../src/paths.ts";
+import { assertBoundRepo } from "../src/core/config.ts";
+import { DERIVE_DIR, acceptBatch, batchAt, ensurePlan, readNotes, readStateOrNull } from "../src/ideas/derive.ts";
+import { IDEAS_PATH } from "../src/core/paths.ts";
 
 const argv = process.argv.slice(2);
 const flag = (name: string): boolean => argv.includes(name);

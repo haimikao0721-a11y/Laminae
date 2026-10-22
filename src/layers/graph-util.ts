@@ -3,7 +3,7 @@
  *
  * 单独放一个文件、不引任何 node 模块，浏览器端打包才不会把 node:path 之类带进去。
  */
-import type { Interval } from "./types.ts";
+import type { Interval } from "../core/types.ts";
 
 /** 文件所在目录的前 depth 级；根目录下的文件归到 "." */
 export function groupOf(file: string, depth: number): string {

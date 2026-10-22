@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LEVELS_CLAIM, TestRepo, readme, runPipeline, sys } from "./helpers.ts";
-import { ABSENT, FALSE, TRUE, UNMEASURED } from "../src/types.ts";
+import { ABSENT, FALSE, TRUE, UNMEASURED } from "../src/core/types.ts";
 
 /** 建仓库、跑流程、清理；回调里负责造提交 */
 function scenario(build: (r: TestRepo) => void, claims = [LEVELS_CLAIM]) {
