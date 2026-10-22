@@ -31,7 +31,6 @@ import type { RepoSpec } from "../src/core/repos.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");
-const SRC = path.join(ROOT, "src");
 
 /* ────────────── 参数 ────────────── */
 
@@ -219,13 +218,15 @@ if (targets.length > 1 && JOBS > 1 && observedRepos.length > 0 && !ALLOW_PARALLE
 
 /* ────────────── 跑一个仓库 ────────────── */
 
+// file 是**仓库相对路径**，不是相对 src/ 的裸文件名。
+// 裸名加隐式前缀的写法会让「搬文件」变成猜谜 —— 改的人记不住前缀是什么。
 const STEPS: { name: string; file: string; data: boolean }[] = [
-  { name: "1/6 逐 commit 测量", file: "measure/measure.ts", data: true },
-  { name: "2/6 时序分析", file: "judge/analyze.ts", data: true },
-  { name: "3/6 模块引用关系", file: "layers/graph.ts", data: true },
-  { name: "4/6 想法、边界与线索", file: "ideas/ideas.ts", data: true },
-  { name: "5/6 构建期加工", file: "output/build-data.ts", data: true },
-  { name: "6/6 渲染 HTML", file: "output/render.ts", data: false },
+  { name: "1/6 逐 commit 测量", file: "src/measure/measure.ts", data: true },
+  { name: "2/6 时序分析", file: "src/judge/analyze.ts", data: true },
+  { name: "3/6 模块引用关系", file: "src/layers/graph.ts", data: true },
+  { name: "4/6 想法、边界与线索", file: "src/ideas/ideas.ts", data: true },
+  { name: "5/6 构建期加工", file: "src/output/build-data.ts", data: true },
+  { name: "6/6 渲染 HTML", file: "src/output/render.ts", data: false },
 ];
 
 const stepsFor = (): typeof STEPS => (STAGE === "data" ? STEPS.filter((s) => s.data) : STEPS);
@@ -240,7 +241,7 @@ interface StepResult {
 
 function runStep(repo: string, file: string, passArgs: string[]): Promise<StepResult> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join(SRC, file), ...passArgs], {
+    const child = spawn(process.execPath, [path.join(ROOT, file), ...passArgs], {
       cwd: repo,
       env: { ...process.env, LAMINAE_REPO: repo, LAMINAE_RUN: RUN_ID },
       stdio: ["ignore", "pipe", "pipe"],
