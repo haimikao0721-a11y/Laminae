@@ -20,6 +20,7 @@ import type { ResolveEnv } from "./imports.ts";
 import { codeLines, isNonCodeLine, normRoute } from "./syntax.ts";
 import type { Binding, FnReason, HandlerKind, PyMount, PyRouter, RouteDecl } from "./syntax.ts";
 import { MODULES, allBindings, allMounts, allRouters, allRoutes, pickModule } from "./syntax-registry.ts";
+import { ENTRY_DIR } from "./scan.ts";
 import type { Interval } from "../core/types.ts";
 
 /**
@@ -422,6 +423,8 @@ export interface LayersData {
   unreferenced: { file: string; alive: Interval[] }[];
   /** 没有 import 边，但文件名在别的文件正文里出现过：按约定加载的脚本、页面资产、插件。不算孤立 */
   convention: { file: string; alive: Interval[] }[];
+  /** 这一份数据覆盖了多少个提交。判断「现在还成立」要用 */
+  commits: number;
   /** 没有引用边、但有入口证据的文件。它们不是孤立，理由就在 why 里 */
   entry: { file: string; why: string; alive: Interval[] }[];
   contracts: ContractKind[];
@@ -613,6 +616,10 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
     for (const f of c.layer.unsupported ?? []) mark(unsupportedFlags, f, i);
     const hollowAt = new Map<string, Map<string, FnReason>>();
     for (const h of c.layer.hollowFns ?? []) {
+      // 测试里的桩函数、示例里的空 CLI，是写法本身，不是缺陷。
+      // click 上「当前成立」的 47 条里 45 条在 tests/、2 条在 examples/，src/ 里一条都没有。
+      // 把它们报成「需要人工复核」，等于让真正的问题排不进前 40 条。
+      if (isTestFile(h.file) || ENTRY_DIR.test(h.file)) continue;
       const key = `${h.file}\u0000${h.name}\u0000${h.reason}`;
       mark(downFlags, key, i);
       downLine.set(key, h.line);
@@ -661,6 +668,10 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
         if (!target) continue;
         const d0 = dist.get(`${target}\u0000${imported}`);
         if (d0 === undefined) continue;
+        // 测试里的桩函数、示例里的空 CLI，是写法本身，不是缺陷。
+        // click 上「当前成立」的 47 条里 45 条在 tests/、2 条在 examples/，src/ 里一条都没有 ——
+        // 把这些也报出来，等于把「设计如此」当成问题。
+        if (isTestFile(d.file) || ENTRY_DIR.test(d.file)) { visitedCall.add(visit); continue; }
         visitedCall.add(visit);
         const hops = d0 + 1;
         const key = `${d.file}\u0000${d.name}\0calls-other`;
@@ -719,6 +730,7 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
   };
 
   return {
+    commits: n,
     stubs: intervals(stubFlags).map(({ key, alive }) => ({ file: key, alive })),
     shallow: intervals(shallowFlags).map(({ key, alive }) => {
       const [file, depth, detail] = key.split("\u0000") as [string, ShallowDepth, string];
@@ -781,7 +793,7 @@ export interface LayerReport {
   contracts: ContractKind[];
   clues: { kind: string; file: string; alive: Interval[] }[];
   unsupported: { file: string; alive: Interval[] }[];
-  down: { file: string; name: string; line: number; reason: FnReason; via: string; hops: number; holds: string[]; alive: Interval[] }[];
+  down: { file: string; name: string; line: number; reason: FnReason; via: string; hops: number; holds: string[]; atHead: boolean; alive: Interval[] }[];
 }
 
 const HOLDS = 0; // 说法的「真」和想法的「已满足」都是 0
@@ -913,8 +925,12 @@ export function joinLayers(data: LayersData, upper: readonly UpperLayer[]): Laye
   const orphans = data.unreferenced.filter((u) => !mentioned.has(u.file) && !entryBy.has(u.file));
   const entry = data.entry.filter((e) => !mentioned.has(e.file));
 
+  // 只存在于历史的条目不能当成当前问题。click 上 100 条里有 53 条是 2014 年的骨架，
+  // 和现存的 47 条混在一起，前 40 条截断后全是历史噪声。
+  const lastCommit = Math.max(0, data.commits - 1);
   const down = data.down.map((d) => ({
     ...d,
+    atHead: d.alive.some(([, b]) => b >= lastCommit),
     holds: upper
       .filter((u) => u.files.includes(d.file) && d.alive.some(([a, b]) => u.states.slice(a, b + 1).some((s) => s === HOLDS)))
       .map((u) => u.label),

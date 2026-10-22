@@ -226,7 +226,7 @@ export interface EntryPoint {
 }
 
 /** 演示、工具、文档这类目录下的文件，用途是被人执行或被工具加载，不是被 import */
-const ENTRY_DIR = /^(?:examples?|samples?|demos?|scripts?|bin|tools?|hack|benchmarks?|docs?|contrib|docs-src)\//;
+export const ENTRY_DIR = /^(?:examples?|samples?|demos?|scripts?|bin|tools?|hack|benchmarks?|docs?|contrib|docs-src)\//;
 
 /** 从清单里取出声明为入口的路径。认不出返回空数组，不抛错 */
 function manifestEntries(file: string, text: string): string[] {
