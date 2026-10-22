@@ -296,6 +296,15 @@ export interface Candidates {
 }
 
 /** 内联进 HTML 的完整载荷 */
+/** 说法本身写不出来的地方。不改判定，只是让作者知道这条测不了 */
+export interface ClaimWarning {
+  id: string;
+  label: string;
+  level: "error" | "warn";
+  code: string;
+  message: string;
+}
+
 export interface Payload {
   title: string;
   subtitle: string;
@@ -306,6 +315,8 @@ export interface Payload {
   commits: Commit[];
   claims: ClaimTimeline[];
   summary: Summary;
+  /** 说法体检的结果。有的话报告顶部会提示 */
+  claimWarnings?: ClaimWarning[];
   /** 模块引用关系；没有可解析的 JS/TS/Python 代码时没有 */
   graph?: GraphData;
   /** 想法与边界；没有 .laminae/ideas.json 时没有 */

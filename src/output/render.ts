@@ -40,6 +40,25 @@ const css = fs.readFileSync(cssPath, "utf8");
 const stat = (k: string, v: string, unit?: string): string =>
   `<div class="stat"><span class="k">${k}</span><span class="v">${v}${unit ? ` <small>${unit}</small>` : ""}</span></div>`;
 
+/* ── 说法体检 ──
+ *
+ * 有些说法根本测不出来，却被静默判成「尚未写入文档」。这比报错更糟：
+ * 读起来像「文档没说这件事」，实际是这条说法没法测。所以放在最上面，先于任何结论。
+ */
+const warningsHtml = (): string => {
+  const w = payload.claimWarnings ?? [];
+  if (w.length === 0) return "";
+  const items = w
+    .map((x) => `<li><b>${x.level === "error" ? "测不了" : "提示"}</b> <code>${esc(x.label)}</code>：${esc(x.message)}</li>`)
+    .join("");
+  const errs = w.filter((x) => x.level === "error").length;
+  return `<section class="card warnings" id="claim-warnings">
+  <h2>先说清楚：有 ${w.length} 条说法写得有问题<small>${errs > 0 ? `其中 ${errs} 条根本测不出来，它们在下面的状态里会显示成「尚未写入文档」——那不是文档没写，是这条说法没法测。` : "这些不影响判定，只是写法可以更好。"}</small></h2>
+  <ul>${items}</ul>
+  <p class="hintline">这里只报写法问题，不改判定。就像你不该把「我没测」当成「文档没写」一样。</p>
+</section>`;
+};
+
 const s = payload.summary;
 const sv = s.survival;
 const statsHtml = [
@@ -291,6 +310,8 @@ ${css}
 </header>
 
 ${navHtml}
+
+${warningsHtml()}
 
 ${payload.layers ? downHtml(payload.layers, payload.commits.length) : ""}
 
