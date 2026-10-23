@@ -32,6 +32,8 @@ interface FactsFile {
   repo: string;
   generatedAt: string;
   commitCount: number;
+  /** 这次运行用了 --no-commands，命令类事实一律没跑 */
+  commandsSkipped?: boolean;
   commits: MeasuredCommit[];
 }
 interface DocsFile {
@@ -364,6 +366,7 @@ fs.writeFileSync(
     {
       generatedAt: new Date().toISOString(),
       commitCount: commits.length,
+      commandsSkipped: factsFile.commandsSkipped === true,
       commits: commits.map((c) => ({ short: c.short, date: c.date, subject: c.subject })),
       claimWarnings,
       results,

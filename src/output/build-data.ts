@@ -74,6 +74,8 @@ interface Timeline {
   commits: { short: string; date: string; subject: string }[];
   /** 说法体检的结果。写不出来的说法会静默判成「尚未写入文档」，这里把它们点出来 */
   claimWarnings?: ClaimWarning[];
+  /** 这次运行用了 --no-commands，命令类事实一律没跑 */
+  commandsSkipped?: boolean;
   results: TimelineResult[];
 }
 
@@ -265,6 +267,9 @@ const kmHours = kaplanMeier(drifted.map((r) => ({ time: r.hours, event: !r.censo
 const summary: Summary = {
   claimCount: outClaims.length,
   commitCount: commits.length,
+  // 这次没跑命令类事实时，报告里要显眼地说出来：那几条会显示成「测不出来」，
+  // 而「测不出来」是四态里最容易被读错的一个。
+  commandsSkipped: timeline.commandsSkipped === true,
   spanHours,
   everFalse: outClaims.filter((c) => c.totalFalse > 0).length,
   falseAtHead: outClaims.filter((c) => c.atHead === 1).length,

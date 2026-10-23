@@ -78,6 +78,20 @@ const warningsHtml = (): string => {
 </section>`;
 };
 
+/**
+ * 这次运行没跑命令类事实（--no-commands）。
+ *
+ * 必须显眼地说出来：那几条说法在下面的状态里会显示成「测不出来」，
+ * 而「测不出来」是四态里最容易被读错的一个 —— 不说明白，人会以为是仓库的问题。
+ */
+const commandsSkippedHtml = (): string => {
+  if (!payload.summary.commandsSkipped) return "";
+  return `<section class="card warnings" id="commands-skipped">
+  <h2>这次没跑命令<small>用了 --no-commands。要跑测试 / 不变量 / 输出差分的那几条说法，状态一律是「测不出来」</small></h2>
+  <p class="hintline">没跑就是没跑，不是不成立。去掉 --no-commands 再跑一次才有结论。</p>
+</section>`;
+};
+
 const s = payload.summary;
 const sv = s.survival;
 const statsHtml = [
@@ -345,6 +359,8 @@ ${css}
 </header>
 
 ${navHtml}
+
+${commandsSkippedHtml()}
 
 ${warningsHtml()}
 
