@@ -16,7 +16,7 @@ import path from "node:path";
 import { assertBoundRepo } from "../core/config.ts";
 import { ensureExcluded } from "../core/exclude.ts";
 import { HTML_PATH, PAYLOAD_PATH, SKILL_ROOT } from "../core/paths.ts";
-import { REASON_TEXT } from "../layers/layers-core.ts";
+import { EVIDENCE, REASON_TEXT } from "../layers/layers-core.ts";
 import { OUTCOME_TEXT } from "../core/types.ts";
 import type { Interval, LayerReport, Outcome, Payload } from "../core/types.ts";
 
@@ -190,7 +190,7 @@ function downHtml(l: LayerReport, n: number): string {
       ? `空函数、只返回空值、写着没实现、只去调用别的空函数。这是迹象，不是已经确认的业务错误。每条落到函数和定义行。当前还成立的 ${live.length} 条；另有 ${gone.length} 条只在历史提交里出现过，折叠在下面`
       : `空函数、只返回空值、写着没实现、只去调用别的空函数。这是迹象，不是已经确认的业务错误。每条落到函数和定义行`;
   return `<section class="card outcomes" id="down-card">
-  <h2>需要人工复核：函数往下看一层<small>${subtitle}</small></h2>
+  <h2>需要人工复核：函数往下看一层<span class="grade grade-heuristic" title="能：${esc(EVIDENCE.heuristic.can)}　不能：${esc(EVIDENCE.heuristic.cannot)}">${esc(EVIDENCE.heuristic.label)}</span><small>${subtitle}</small></h2>
   ${items.length === 0 ? `<p class="hintline">当前没有还成立的这种函数。</p>` : `<ul>${capped(items, 40)}</ul>`}
   ${
     old.length === 0
@@ -201,6 +201,20 @@ function downHtml(l: LayerReport, n: number): string {
 }
 
 function layersHtml(l: LayerReport, n: number): string {
+  // 每一块都标出证据等级。这不是装饰 —— 它是这份报告最要紧的分类：
+  // 「有出处」的错了是一跑就露，「看形状推断」的这一路上整类整类地错过。
+  const grade = (bucket: keyof typeof l.evidence): string => {
+    const key = l.evidence[bucket];
+    const e = EVIDENCE[key];
+    return `<span class="grade grade-${key}" title="能：${esc(e.can)}　不能：${esc(e.cannot)}">${esc(e.label)}</span>`;
+  };
+  const gradeLegend = (): string => {
+    const levels = ["stated", "mentioned", "structural", "heuristic"] as const;
+    return `<ul class="grades">${levels
+      .map((k) => `<li><span class="grade grade-${k}">${esc(EVIDENCE[k].label)}</span> 能：${esc(EVIDENCE[k].can)}。不能：${esc(EVIDENCE[k].cannot)}。</li>`)
+      .join("")}</ul>`;
+  };
+
   const hollow = l.hollow.map(
     (h) =>
       `<li>${h.kind === "claim" ? "说法" : "想法"}「${esc(h.label)}」在 ${spans(h.alive, n)} 为成立，但 <code>${esc(h.file)}</code> 是假实现：${FAKE_WORD[h.depth] ?? h.depth}</li>`,
@@ -237,20 +251,21 @@ function layersHtml(l: LayerReport, n: number): string {
     .join("");
 
   return `<section class="card outcomes" id="layers-card">
-  <h2>层与层对不上的地方<small>分三档。无法验证不是缺陷清单。需要人工复核只是迹象</small></h2>
-  <h3>需要人工复核<small>说法为真但指着的文件像空壳，或纯转发、只有测试在用、措辞把差额盖住</small></h3>
+  <h2>层与层对不上的地方<small>每一块都标出证据等级。等级说的是「这条结论能拿它做什么」，不是严重程度</small></h2>
+  ${gradeLegend()}
+  <h3>需要人工复核${grade("hollow")}<small>说法为真但指着的文件像空壳，或纯转发、只有测试在用、措辞把差额盖住</small></h3>
   ${hollow.length + reviewCovers.length === 0 ? `<p class="hintline">没有。</p>` : `<ul>${capped([...hollow, ...reviewCovers], 40)}</ul>`}
   <h3>无法验证<small>工具没追上：处理函数接不上、契约只有一侧、别名解析不了。不要当成项目里的问题</small></h3>
   ${unverified.length === 0 ? `<p class="hintline">没有。</p>` : `<ul>${capped(unverified, 40)}</ul>`}
-  <h3>有实质代码，但还不能算真实现<small>排除了假实现和纯转发。工具看不到这段代码是不是在做说法里的那件事</small></h3>
+  <h3>有实质代码，但还不能算真实现${grade("unproven")}<small>排除了假实现和纯转发。工具看不到这段代码是不是在做说法里的那件事</small></h3>
   ${unproven.length === 0 ? `<p class="hintline">没有。</p>` : `<ul>${capped(unproven, 15)}</ul>`}
-  <h3>孤立模块<small>没被任何代码引用，不是入口或测试，也没有任何说法或想法提到</small></h3>
+  <h3>孤立模块${grade("orphans")}<small>没被任何代码引用，不是入口或测试，也没有任何说法或想法提到。这是一个中性事实，不是「该删」</small></h3>
   ${orphans.length === 0 ? `<p class="hintline">没有。</p>` : `<ul>${capped(orphans, 40)}</ul>`}
-  <h3>契约<small>仓库里声明的东西和别处引用的东西，按种类配对。缺任何一侧只记录，不判为洞</small></h3>
+  <h3>契约${grade("contracts")}<small>仓库里声明的东西和别处引用的东西，按种类配对。缺任何一侧只记录，不判为洞</small></h3>
   ${contracts === "" ? `<p class="hintline">没有找到契约（目前只认 HTTP 路径：路由声明和 fetch / axios 调用）。</p>` : `<ul>${contracts}</ul>`}
-  <h3>语法还没有模块<small>认得出是代码，但不会判断深浅，也不画引用</small></h3>
+  <h3>语法还没有模块${grade("unsupported")}<small>认得出是代码，但不会判断深浅，也不画引用</small></h3>
   ${(l.unsupported ?? []).length === 0 ? `<p class="hintline">没有。</p>` : `<ul>${capped((l.unsupported ?? []).map((u) => `<li><code>${esc(u.file)}</code>（${spans(u.alive, n)}）</li>`), 40)}</ul>`}
-  <h3>注入线索<small>危险调用点的位置，只是线索，不判断能不能被利用</small></h3>
+  <h3>注入线索${grade("clues")}<small>危险调用点的位置，只是线索，不判断能不能被利用</small></h3>
   ${clues.length === 0 ? `<p class="hintline">没有。</p>` : `<ul>${capped(clues, 40)}</ul>`}
 </section>`;
 }

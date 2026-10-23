@@ -1019,3 +1019,26 @@ b.del, .isum b.bad { color: var(--s-false-ink); }
 .history > summary:hover { opacity: 1; }
 .history ul { margin-top: 6px; }
 .history li { opacity: 0.72; }
+
+/* 证据等级。不是装饰：这份报告最要紧的分类是「这条结论能拿它做什么」。
+   stated 有出处 / mentioned 有文本证据 / structural 只有结构事实 / heuristic 看形状推断 */
+.grade {
+  display: inline-block;
+  margin-left: 0.5em;
+  padding: 0.05em 0.45em;
+  border-radius: 0.6em;
+  font-size: 0.75em;
+  font-weight: 600;
+  vertical-align: middle;
+  border: 1px solid currentColor;
+}
+.grade-stated { color: #1a7f37; }
+.grade-mentioned { color: #0969da; }
+.grade-structural { color: #9a6700; }
+.grade-heuristic { color: #cf222e; }
+[data-theme="dark"] .grade-stated { color: #3fb950; }
+[data-theme="dark"] .grade-mentioned { color: #58a6ff; }
+[data-theme="dark"] .grade-structural { color: #d29922; }
+[data-theme="dark"] .grade-heuristic { color: #f85149; }
+ul.grades { list-style: none; padding-left: 0; margin: 0 0 1em; }
+ul.grades li { padding: 0.15em 0; font-size: 0.9em; color: var(--fg-dim, #57606a); }
