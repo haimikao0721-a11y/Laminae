@@ -243,6 +243,56 @@ Two kinds: **defects in the tool** (it accuses wrongly, misses things, or crashe
 
 ---
 
+### Performance: three rounds of micro-optimisation gained 4%, one incremental change gained 105%
+
+**Symptom** On vue (6513 mainline commits) the whole pipeline took 1397 seconds. The graph step alone took 1102.
+
+**How it was found** Not by guessing — `node --cpu-prof` over 80 real commits showed 43.5% in the file-name regex I had just added, 18.8% in git subprocesses, and 10.8% in `maskNonCode`.
+
+**Four rounds**, each re-measured on the same 80 commits:
+
+| Round | ms/commit | Cumulative |
+|---|---|---|
+| Start | 212.5 | — |
+| Replace the backtracking regex | 204.5 | 1.04× |
+| **Incremental** (only files that changed) | 103.6 | 2.05× |
+| **Batched** (6513 git calls → 2) | 68.6 | 3.10× |
+| Masking rewritten with slices | 63.8 | 3.33× |
+
+End to end: **1397 seconds → 465 seconds**.
+
+**The two lessons that matter:**
+
+1. **A percentage in a profile is not recoverable wall-clock time.** I chased the 26.2% line for three rounds and gained 4% — that time was spent in the loop body over thirty thousand tokens, not in the map insertions I assumed. Only change a hotspot when its *size* can be reduced; making it slightly faster is usually wasted effort.
+
+2. **Incremental is an order of magnitude better than micro-optimisation.** The hotspot was "rescan 5.6 MB of text per commit", while 99% of that text is identical between adjacent commits. Processing only changed files gained 105% in one go.
+
+---
+
+### Batching: the starting point was wrong, twice
+
+**Symptom** Replacing 6513 `git ls-tree` calls with one `git log --raw` plus in-memory reconstruction produced 7 mismatches out of 8 sampled commits when compared against `ls-tree`.
+
+**First mistake** I `unshift`-ed the first commit from `rev-list` into `order`, but `git log` output already contains it — the whole index was off by one, so every commit received the previous one's state.
+
+**Second mistake** The starting point was "the commit requested first". Callers ask in chronological order, so the first request is the **earliest** commit, and `git log <earliest>` returns only that commit. The starting point must be the repository tip.
+
+**How it was confirmed** Not by reading the code: eight sampled commits were compared entry by entry against `git ls-tree -r`, and only zero differences counted as passing.
+
+**Lesson** Index-reconstruction code cannot be verified by reading it. **You need an independent reference implementation to compare against.** `git ls-tree` was that reference.
+
+---
+
+### A pointer that did not advance swallowed half a file
+
+**Symptom** After rewriting `maskNonCode` from "split into a character array" to "accumulate slices", four tests failed.
+
+**Cause** After handling a string, the cursor stayed on the closing quote, so the next iteration treated it as an opening quote and blanked everything from there to the next quote — or to end of file. The symptom was that everything after `import ... from './x'` was masked out.
+
+**Lesson** In a hand-written scanner, ask of every branch: **did the pointer advance?** Wherever the code says "handled, continue", confirm the next iteration does not start on the character just handled.
+
+---
+
 ## 2. My own operational mistakes
 
 These are not product bugs, but **they are easier to repeat than product bugs**, and each one nearly made me misdiagnose the tool.
