@@ -319,6 +319,7 @@ scripts/       pipeline scripts
   run.ts         the whole pipeline
   setup.ps1      environment check (Windows)
   setup.sh       environment check (macOS / Linux)
+  init.ts        pick claims out of the documents, check them at HEAD, write claims.json
   diff.ts        compare two runs: after changing a rule, which conclusion changed first
   build-web.ts   compile the browser side to dist/app.js
   snapshot.ts    headless Chrome snapshots
@@ -333,12 +334,24 @@ For design details see [docs/SPEC.md](docs/SPEC.en.md). When picking claims in a
 
 laminae itself contains no project's paths, numbers, or file names. Switching repositories changes only the input, not the code:
 
-1. **Fish out a draft first; do not start from a blank file.** `node <laminae>/src/suggest.ts` scans the documents for numbers and paths and prints a `claims.json` draft. The `fact` in the draft is usually a placeholder and needs a human to fix it.
-2. **Check it at HEAD before committing to it.** `node <laminae>/src/lookup.ts draft.json` prints the text it actually captured and the fact's value. This step runs no commands, it only counts the repository, so it takes seconds.
-3. Only after it lines up, write it into `.laminae/claims.json`. When picking claims, check against [docs/PATTERNS.en.md](docs/PATTERNS.en.md).
+1. **Produce a draft with one command; do not start from a blank file**:
+
+   ```bash
+   node <laminae>/scripts/init.ts            # interactive: ask per candidate, write the accepted ones
+   node <laminae>/scripts/init.ts --dry-run  # look only, write nothing
+   ```
+
+   It picks out the sentences that look like they contain a number, checks each one at HEAD, and lays out three things: **whether the locator captured the right sentence**, **what value the fact measured**, and **whether that fact is still a placeholder**.
+
+2. **Replace the placeholder fact with what should actually be counted.** The `fact` in a draft is usually a default such as "count every file", which has nothing to do with what the sentence claims. **The locator is worth keeping; the fact has to change.** See [docs/PATTERNS.en.md](docs/PATTERNS.en.md) for which field.
+
+3. **Check it again after editing**: `node <laminae>/src/lookup.ts`. This step runs no commands, it only counts the repository, so it takes seconds.
+
 4. Run `scripts/run.ts`.
 
-What really decides whether this can be put to use is not the code but **whether the claims are picked accurately**: pick one claim wrong (`locator` matching a different sentence, `fact` counting the wrong thing) and the whole grid has one false position. So step 2 cannot be skipped.
+What really decides whether this can be put to use is not the code but **whether the claims are picked accurately**: pick one claim wrong (`locator` matching a different sentence, `fact` counting the wrong thing) and the whole grid has one false position. So step 3 cannot be skipped.
+
+**`init` proposes and checks; it does not judge true or false.** It does not decide whether a sentence should say that, nor whether the code does it — it only guarantees the `locator` captured the right text.
 
 **After changing a parser or a rule**, use `scripts/diff.ts` to see what it affected:
 
