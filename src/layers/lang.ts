@@ -10,6 +10,11 @@ const SKIP = /(?:^|\/)(?:node_modules|vendor|dist|build|out|\.venv|venv|__pycach
 const JS_EXT = /\.(?:[cm]?[jt]sx?)$/;
 const PY_EXT = /\.py$/;
 const RS_EXT = /\.rs$/;
+/**
+ * 单文件组件。里面的 <script> 就是 JS/TS，所以按 js 处理；
+ * 但解析前要先取出 script 块，这一步在 scan.ts 里做。
+ */
+const SFC_EXT = /\.(?:vue|svelte)$/;
 
 /** 常见语言的扩展名。这里没有对应的语法模块 */
 const UNSUPPORTED_EXT = /\.(?:java|go|cs|c|cc|cpp|h|hpp|kt|kts|swift|rb|php|scala|m|mm)$/;
@@ -21,6 +26,7 @@ export function langOf(file: string): LangId | "unsupported" | null {
   if (JS_EXT.test(file)) return "js";
   if (PY_EXT.test(file)) return "py";
   if (RS_EXT.test(file)) return "rs";
+  if (SFC_EXT.test(file)) return "js";
   if (UNSUPPORTED_EXT.test(file)) return "unsupported";
   return null;
 }

@@ -11,7 +11,7 @@ import path from "node:path";
 import { isSupportedCode } from "./lang.ts";
 
 /** 认作代码文件的扩展名。和 lang.ts 里支持的语言一致 */
-export const CODE_EXT = /\.(?:[cm]?[jt]sx?|py)$/;
+export const CODE_EXT = /\.(?:[cm]?[jt]sx?|py|vue|svelte)$/;
 
 /** 测试文件：目录名或文件名带 test / spec。图上默认折掉，不然它们会盖过真正的模块关系 */
 export function isTestFile(file: string): boolean {
@@ -161,6 +161,20 @@ function resolveDirectory(dir: string, env: ResolveEnv): string | null {
 }
 
 /** 解析 JS/TS 的相对引用，指向仓库里的哪个文件；解析不到返回 null */
+/**
+ * 单文件组件（.vue / .svelte）里真正能 import 的只有 <script> 块。
+ *
+ * 模板部分是 HTML，直接当 JS 解析会把属性写成的东西当成代码；
+ * 而块本身可能有多个（<script> 和 <script setup>），都要拼起来。
+ *
+ * 取不到 <script> 就返回空串 —— 那样这个文件没有任何引用，而不是退回去把整个文件当 JS。
+ */
+export function sfcScript(text: string): string {
+  const parts: string[] = [];
+  for (const m of text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) parts.push(m[1] ?? "");
+  return parts.join("\n");
+}
+
 export function resolveJs(from: string, spec: string, env: ResolveEnv): string | null {
   const target = norm(path.posix.join(path.posix.dirname(from), spec));
   const ext = path.posix.extname(target);
