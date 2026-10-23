@@ -6,7 +6,7 @@ As of `50dee4f`. This document answers three things: **what it can do now**, **w
 
 ---
 
-## 1. Six commands
+## 1. Seven commands
 
 | Command | Question it answers | Does it write |
 |---|---|---|
@@ -16,6 +16,7 @@ As of `50dee4f`. This document answers three things: **what it can do now**, **w
 | `scripts/branches.ts` | Is there a branch where this is already fixed but unmerged | No |
 | `scripts/merges.ts` | Did a merge lose a fix | No |
 | `scripts/verify.ts` | **Is this report fabricated** | No |
+| `scripts/diff.ts` | After changing a rule, which conclusion changed first | No |
 
 `verify` is already wired in as the last step of `run`: every report is checked as it is produced, and a failure makes the exit code non-zero.
 
