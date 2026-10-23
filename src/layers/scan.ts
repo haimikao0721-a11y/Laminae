@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { REPO } from "../core/config.ts";
 import type { CommitGraph } from "./graph-core.ts";
 import { TreeWalker } from "./treewalk.ts";
-import { indexPackages, isCodeFile, isTestFile, parseBareSpecs, parseFileImports, resolveBareSpecs, resolvePython, resolveRaw } from "./imports.ts";
+import { indexPackages, isCodeFile, isTestFile, parseBareSpecs, parseFileImports, resolveBareSpecs, resolvePython, resolveRaw, sfcScript } from "./imports.ts";
 import { isUnsupportedCode } from "./lang.ts";
 import type { RawImport, ResolveEnv } from "./imports.ts";
 import { EMPTY_COMMIT_LAYER, mountRoutes, scanFileLayer } from "./layers-core.ts";
@@ -463,7 +463,10 @@ export class ImportScanner {
     for (const o of needCode) {
       const file = kindOf.get(o)!;
       const text = texts.get(o) ?? "";
-      this.infoByBlob.set(o, { raw: parseFileImports(file, text), bare: parseBareSpecs(file, text), layer: scanFileLayer(text), text });
+      // 单文件组件只解析 <script> 块：模板是 HTML，当 JS 解析会把属性当成代码。
+      // 正文本身仍然保留原文 —— 模板里的组件标签也算「提到了这个文件」。
+      const from = /\.(?:vue|svelte)$/i.test(file) ? sfcScript(text) : text;
+      this.infoByBlob.set(o, { raw: parseFileImports(file, from), bare: parseBareSpecs(file, from), layer: scanFileLayer(from), text });
     }
     for (const o of needPkg) this.pkgByBlob.set(o, texts.get(o) ?? null);
 
