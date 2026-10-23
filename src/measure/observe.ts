@@ -7,7 +7,8 @@
  * 执行发生在临时 git worktree 里，不改目标仓库的主工作区。
  * 命令写在 claims.json 里，按 shell 执行，权限和跑这条命令的人一样。
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -31,6 +32,8 @@ export interface ObserveCache {
 }
 
 const DEFAULT_TIMEOUT_SEC = 60;
+/** 一条命令最多收多少输出。话痨命令不该把内存撑爆 */
+const MAX_STDOUT = 4 * 1024 * 1024;
 
 /** 换行归一、去掉末尾空白，避免只差一个换行就算「变了」 */
 export function normalizeOutput(text: string): string {
@@ -110,19 +113,85 @@ export function watchKey(paths: readonly string[], read: (file: string) => strin
   return (h >>> 0).toString(16);
 }
 
-export function runCommand(command: string, cwd: string, timeoutMs: number): CommandOutcome {
-  const r = spawnSync(command, {
-    cwd,
-    shell: true,
-    encoding: "utf8",
-    timeout: timeoutMs,
-    maxBuffer: 4 * 1024 * 1024,
-    windowsHide: true,
+/**
+ * 超时之后把**整棵子进程树**杀掉。
+ *
+ * 只杀 shell 是不够的：命令里起一个服务（`npm test` 常常会），shell 被杀了，
+ * 那个服务还在跑、还占着端口，下一次跑同一份 claims 会撞上自己上一次留下的东西 ——
+ * 表现出来是「测试偶尔失败」，看起来像项目的问题。
+ *
+ * Windows 上用 `taskkill /T` 杀树，别的平台用进程组（-pid）。都是同步的，
+ * 因为这个调用点本身就在同步流程里。
+ */
+function killTree(pid: number | undefined): void {
+  if (pid === undefined || !Number.isInteger(pid) || pid <= 0) return;
+  try {
+    if (process.platform === "win32") {
+      // Windows 没有 POSIX 进程组，/T 是杀整棵树的唯一办法。
+      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    } else {
+      // 负号表示按进程组杀 —— 上面 detach 了这个子进程，它自成一个组
+      process.kill(-pid, "SIGKILL");
+    }
+  } catch {
+    // 杀不掉不该挡住测量结果落盘 —— 这条命令的结论已经在 failed 里了
+  }
+}
+
+/**
+ * 跑一条命令，超时就**把整棵子进程树杀掉**。
+ *
+ * 只杀 shell 是不够的：命令里起一个服务（`npm test` 常常会），shell 被杀了，
+ * 那个服务还在跑、还占着端口，下一次跑同一份 claims 会撞上自己上一次留下的东西 ——
+ * 表现出来是「测试偶尔失败」，看起来像项目的问题。
+ *
+ * 为什么必须是异步的：先试过同步版本（spawnSync 带 timeout，回来之后拿 pid 去
+ * taskkill /T）。不行 —— spawnSync 超时时**先把 shell 杀了才返回**，等我们拿到 pid，
+ * 树根已经不在，taskkill 找不到它，孙进程就留下来了。实测就是这样：
+ * 超时返回之后那个 node 子进程还活得好好的。
+ *
+ * 异步版本能在子进程**还活着的时候**动手：超时定时器一到，先杀树，再收尾。
+ *
+ * 判定语义没有任何变化：仍然只看退出码，仍然是把 CommandOutcome 交给
+ * interpretObserved。这里改的只是「怎么跑、跑完怎么清理」。
+ */
+export function runCommand(command: string, cwd: string, timeoutMs: number): Promise<CommandOutcome> {
+  return new Promise((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = spawn(command, {
+        cwd,
+        shell: true,
+        windowsHide: true,
+        // detached：让子进程成为新进程组的组长，超时之后能按组杀干净。
+        detached: process.platform !== "win32",
+      });
+    } catch {
+      resolve({ failed: true, code: null, stdout: "" });
+      return;
+    }
+
+    let stdout = "";
+    let settled = false;
+    const finish = (out: CommandOutcome): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(out);
+    };
+
+    const timer = setTimeout(() => {
+      killTree(child.pid);
+      finish({ failed: true, code: null, stdout: "" });
+    }, timeoutMs);
+
+    child.stdout?.on("data", (b: Buffer) => {
+      // 输出上限：一个话痨命令不该把内存撑爆
+      if (stdout.length < MAX_STDOUT) stdout += b.toString("utf8");
+    });
+    child.on("error", () => finish({ failed: true, code: null, stdout: "" }));
+    child.on("close", (code: number | null) => finish({ failed: false, code: code ?? null, stdout }));
   });
-  const timedOut = !!r.error && (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
-  if (timedOut || r.status === null) return { failed: true, code: null, stdout: "" };
-  const stdout = typeof r.stdout === "string" ? r.stdout : "";
-  return { failed: false, code: r.status, stdout };
 }
 
 /**
@@ -136,18 +205,20 @@ export function nextObservation(opts: {
   read: (file: string) => string | null;
   cache: ObserveCache | undefined;
   materialize: (sha: string) => string | null;
-  run: (command: string, cwd: string, timeoutMs: number) => CommandOutcome;
-}): { value: number | null; cache: ObserveCache | undefined; ran: boolean } {
+  run: (command: string, cwd: string, timeoutMs: number) => Promise<CommandOutcome>;
+}): Promise<{ value: number | null; cache: ObserveCache | undefined; ran: boolean }> {
   const key = opts.fact.watch ? watchKey(opts.paths, opts.read, opts.fact.watch) : opts.sha;
   if (key !== null && opts.cache && opts.cache.key === key) {
-    return { value: opts.cache.value, cache: opts.cache, ran: false };
+    return Promise.resolve({ value: opts.cache.value, cache: opts.cache, ran: false });
   }
   const cwd = opts.materialize(opts.sha);
-  if (cwd === null) return { value: null, cache: opts.cache, ran: false };
+  if (cwd === null) return Promise.resolve({ value: null, cache: opts.cache, ran: false });
   const timeoutMs = (opts.fact.timeout ?? DEFAULT_TIMEOUT_SEC) * 1000;
-  const value = interpretObserved(opts.fact.type, opts.run(opts.fact.command, cwd, timeoutMs));
-  const cache = key === null ? opts.cache : { key, value };
-  return { value, cache, ran: true };
+  return opts.run(opts.fact.command, cwd, timeoutMs).then((outcome) => {
+    const value = interpretObserved(opts.fact.type, outcome);
+    const cache = key === null ? opts.cache : { key, value };
+    return { value, cache, ran: true };
+  });
 }
 
 /** 反复检出到同一个临时 worktree。关闭时删掉，不碰主工作区 */

@@ -306,6 +306,19 @@ interface StepResult {
   err: string;
 }
 
+/**
+ * 非 verbose 时也要透出来的行。
+ *
+ * 「N 条说法的写法有问题」说的是**这份报告的哪些格子不可信**，
+ * 和「哪几条说法写得不对」是同一件事。藏在 --verbose 后面等于没说。
+ */
+function emitNotices(spec: RepoSpec, r: StepResult): void {
+  const keep = r.out
+    .split("\n")
+    .filter((l) => /条说法的写法有问题|^\s*[✗!] |有 .* 处引用|回溯|可能卡住/.test(l));
+  if (keep.length > 0) console.log(keep.map((l) => `  [${spec.name}] ${l.trim()}`).join("\n"));
+}
+
 function runStep(repo: string, file: string, passArgs: string[]): Promise<StepResult> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [path.join(ROOT, file), ...passArgs], {
@@ -339,6 +352,7 @@ async function runRepo(spec: RepoSpec, passArgs: string[]): Promise<{ ok: boolea
       return { ok: false, seconds: (Date.now() - t0) / 1000 };
     }
     if (VERBOSE) emitLog(spec, r);
+    else emitNotices(spec, r);
   }
 
   // 最后一步：校验产物。
