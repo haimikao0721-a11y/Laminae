@@ -7,6 +7,14 @@
  *   node <laminae>/scripts/run.ts --run before-refactor
  *   node <laminae>/scripts/run.ts data          只跑到数据，不渲染 HTML
  *
+ * 只跑其中几步（改了解析或规则之后用，跳过最贵的逐 commit 测量）：
+ *   node <laminae>/scripts/run.ts --from 2               从第 2 步起
+ *   node <laminae>/scripts/run.ts --from analyze --to 5  名字里的一段也认
+ *   node <laminae>/scripts/run.ts --from 5               只重算构建期加工和渲染
+ *
+ * 跳过的步骤依赖的中间数据不在时，会停下来告诉你先跑哪一步 ——
+ * 不会让后面几步读到空文件、产出一份「看起来正常」的空报告。
+ *
  * 多仓库（在包含多个子仓库的项目文件夹下）：
  *   node <laminae>/scripts/run.ts                自动读 .laminae/repos.json
  *   node <laminae>/scripts/run.ts --repos api,web
@@ -229,7 +237,66 @@ const STEPS: { name: string; file: string; data: boolean }[] = [
   { name: "6/6 渲染 HTML", file: "src/output/render.ts", data: false },
 ];
 
-const stepsFor = (): typeof STEPS => (STAGE === "data" ? STEPS.filter((s) => s.data) : STEPS);
+/**
+ * 每一步跑之前，磁盘上必须已经有什么。
+ *
+ * 为什么要有这张表：加了 --from 之后，人可以直接从第 2 步开始跑，跳过最贵的测量。
+ * 但中间数据不在的时候，后面几步会读到空文件然后写出一份**看起来正常**的报告 ——
+ * 空的引用图、零条说法。那种产物比报错危险得多，因为 verify 只核对「能不能重算」，
+ * 而空数据重算出来也是空的，一路对得上。
+ *
+ * 所以：宁可停下来告诉人先跑哪一步。
+ */
+const NEEDS: readonly (readonly string[])[] = [
+  [], // 1 measure 自己从 git 读
+  ["facts.json", "docs-by-commit.json"],
+  ["facts.json"],
+  ["facts.json"],
+  ["timeline.json", "graph.json", "layers.json"],
+  ["payload.json"],
+];
+
+/** 把 --from / --to 的值解析成 STEPS 的下标。接受步号，也接受名字里的一段 */
+function resolveStep(spec: string, which: string): number {
+  const n = Number(spec);
+  if (Number.isInteger(n) && n >= 1 && n <= STEPS.length) return n - 1;
+  const hit = STEPS.findIndex((s) => s.name.includes(spec) || s.file.includes(spec));
+  if (hit >= 0) return hit;
+  throw new Error(
+    `${which} 认不出「${spec}」。可以给步号 1..${STEPS.length}，或者名字里的一段：\n` +
+      STEPS.map((s, i) => `  ${i + 1}  ${s.name}`).join("\n"),
+  );
+}
+
+const FROM_SPEC = has("--from") ? (argv[argv.indexOf("--from") + 1] ?? "") : null;
+const TO_SPEC = has("--to") ? (argv[argv.indexOf("--to") + 1] ?? "") : null;
+const FROM = FROM_SPEC === null ? 0 : resolveStep(FROM_SPEC, "--from");
+const TO = TO_SPEC === null ? STEPS.length - 1 : resolveStep(TO_SPEC, "--to");
+if (FROM > TO) throw new Error(`--from 在第 ${FROM + 1} 步，--to 在第 ${TO + 1} 步，区间是空的`);
+
+/** 从哪一步开始跑，就得先确认那一步要读的东西已经在 */
+function assertInputs(repo: string, from: number): void {
+  const need = NEEDS[from] ?? [];
+  const missing: string[] = [];
+  for (const f of need) {
+    const file = f === "payload.json" ? path.join(repo, ".laminae", "runs", RUN_ID, "payload.json") : path.join(repo, ".laminae", "data", f);
+    if (!fs.existsSync(file)) missing.push(file);
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `从第 ${from + 1} 步（${STEPS[from]!.name}）开始跑，但缺这些文件：\n` +
+        missing.map((m) => `  ${m}`).join("\n") +
+        `\n\n先跑完整的一遍，或者从这里之前的那一步开始：\n  node scripts/run.ts --from 1`,
+    );
+  }
+}
+
+const stepsFor = (): typeof STEPS => {
+  const base = STAGE === "data" ? STEPS.filter((s) => s.data) : STEPS;
+  // --from / --to 按 STEPS 的绝对下标切，再和 data 过滤取交集 ——
+  // 这样「--data --from 3」仍然是「只到数据，并从第 3 步起」，两个开关不互相打架
+  return base.filter((s) => STEPS.indexOf(s) >= FROM && STEPS.indexOf(s) <= TO);
+};
 
 interface StepResult {
   ok: boolean;
@@ -258,6 +325,12 @@ function runStep(repo: string, file: string, passArgs: string[]): Promise<StepRe
 
 async function runRepo(spec: RepoSpec, passArgs: string[]): Promise<{ ok: boolean; seconds: number }> {
   const t0 = Date.now();
+  try {
+    assertInputs(spec.abs, FROM);
+  } catch (e) {
+    emitErr(spec, (e as Error).message);
+    return { ok: false, seconds: (Date.now() - t0) / 1000 };
+  }
   for (const step of stepsFor()) {
     const r = await runStep(spec.abs, step.file, passArgs);
     if (!r.ok) {
@@ -275,6 +348,9 @@ async function runRepo(spec: RepoSpec, passArgs: string[]): Promise<{ ok: boolea
   // 而不是等到有人想起来才去查。
   //
   // 这一步会重新渲染一遍（一份报告几十毫秒），比它挡住的麻烦便宜得多。
+  // 没跑到最后一步就没有新报告，没什么可校验的 —— 硬跑会去校上一份旧产物，
+  // 得到一个和这次运行无关的结论。
+  if (TO < STEPS.length - 1) return { ok: true, seconds: (Date.now() - t0) / 1000 };
   const v = await runStep(spec.abs, "scripts/verify.ts", []);
   if (!v.ok) {
     emitLog(spec, v);
