@@ -78,13 +78,15 @@ import { downloadProject } from './download/download'
 
 ### 2. 「往下看一层」有一整类误报
 
-**现象** vue 上「当前成立」12 条，抽样看基本都是误报：
+**现象** vue 上「当前成立」原本 12 条。修掉注释遮罩和类型声明之后剩 3 条，全是设计如此的代码：
 
 | 例子 | 为什么是误报 |
 |---|---|
-| `shared/src/general.ts:13  NO  return-const` | `export const NO = () => false`，惯用写法 |
-| `compiler-core/src/babelUtils.ts:468  NODE  empty` | 从对象字面量里解析出来的伪函数 |
-| `dts-test/*.test-d.ts  expectString` | 类型声明 `declare function`，本来就没有函数体 |
+| `shared/src/general.ts:13  NO  return-const` | `export const NO = () => false`，文档写着 "Always return false."，是有意的常量谓词 |
+| `compiler-sfc/src/index.ts:89  shouldTransformRef` | `() => false`，功能开关，暂时关掉 |
+| `runtime-core/src/apiWatch.ts:186  watchStopHandle` | 空句柄，后面挂 `.stop` / `.resume` 保持 API 形状 |
+
+已经修掉的两类：注释和字符串里的代码样例（`xxx`、`NODE`、`foo`）、类型声明文件（`declare function`）。
 
 **影响** 箭头常量函数、类型声明、解析伪影，这三类会一直被报。
 

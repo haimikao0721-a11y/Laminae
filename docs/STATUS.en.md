@@ -78,13 +78,15 @@ import { downloadProject } from './download/download'
 
 ### 2. "One layer down" has a whole class of false positives
 
-**Symptom** Of the 12 "currently holding" findings on vue, the sample is almost entirely false:
+**Symptom** vue originally had 12 "currently holding" findings. After fixing comment masking and type declarations, 3 remain, and all three are code that is meant to be this way:
 
 | Example | Why it is wrong |
 |---|---|
-| `shared/src/general.ts:13  NO  return-const` | `export const NO = () => false`, idiomatic |
-| `compiler-core/src/babelUtils.ts:468  NODE  empty` | a pseudo-function parsed out of an object literal |
-| `dts-test/*.test-d.ts  expectString` | a `declare function` type declaration, which has no body by definition |
+| `shared/src/general.ts:13  NO  return-const` | `export const NO = () => false`, documented as "Always return false." — an intentional constant predicate |
+| `compiler-sfc/src/index.ts:89  shouldTransformRef` | `() => false`, a feature flag that is temporarily off |
+| `runtime-core/src/apiWatch.ts:186  watchStopHandle` | an empty handle that later gets `.stop` / `.resume` so the API shape holds |
+
+Two classes were fixed: code samples inside comments and strings (`xxx`, `NODE`, `foo`), and type declaration files (`declare function`).
 
 **Impact** Arrow constant functions, type declarations and parsing artifacts will keep being reported.
 
