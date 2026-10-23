@@ -2,7 +2,7 @@
 
 [中文](STATUS.md) | [English](STATUS.en.md)
 
-As of `8b79350`. This document answers three things: **what it can do now**, **what it has been validated on**, and **how far the tool can express itself**.
+As of `9d1e8bd`. This document answers three things: **what it can do now**, **what it has been validated on**, and **how far the tool can express itself**.
 
 ---
 
