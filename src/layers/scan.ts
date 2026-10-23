@@ -165,21 +165,33 @@ function countOf(hay: string, needle: string): number {
  *
  * 现在改成一次扫描建索引，之后每个候选 O(1) 查表。
  */
-function mentionIndex(text: string): Map<string, number> {
-  const idx = new Map<string, number>();
-  // 文件名：带扩展名的一串，允许路径分隔符和点
-  for (const m of text.matchAll(/[A-Za-z0-9_@][A-Za-z0-9_.\-]*(?:\/[A-Za-z0-9_.\-]+)*\.[A-Za-z0-9]{1,8}/g)) {
-    const token = m[0]!;
-    // 同时记两份：整串，和最后一段。文档里可能写全路径，也可能只写文件名
-    idx.set(token, (idx.get(token) ?? 0) + 1);
+function mentionCounts(text: string, wanted: ReadonlySet<string>): Map<string, number> {
+  const hits = new Map<string, number>();
+  if (wanted.size === 0) return hits;
+
+  // 按「不可能是文件名一部分」的字符切开，只检查切出来的碎片是不是我们关心的名字。
+  //
+  // 这一步被 profile 推着改了两轮：
+  //   第一版是「对每个候选，在整段正文里 includes」—— O(候选 × 全文)，太慢。
+  //   第二版换成回溯正则建全量索引，profile 显示正则占 43.5%，更糟。
+  //   第三版用 String.split 线性分词，但把三万个 token 全塞进 Map，mentionIndex 占 26.2%。
+  // 现在这一版只对**候选**计数，Map 里只留命中项 —— 通常不到一百个。
+  for (const piece of text.split(/[^A-Za-z0-9_@./-]+/)) {
+    let token = piece;
+    // 去掉首尾的句号、斜杠、连字符：正文里常写成「见 renderer.ts.」这种
+    while (token.length > 0 && ".-/".includes(token[token.length - 1]!)) token = token.slice(0, -1);
+    while (token.length > 0 && ".-/@".includes(token[0]!)) token = token.slice(1);
+    if (token.length < 5) continue;
+    if (wanted.has(token)) {
+      hits.set(token, (hits.get(token) ?? 0) + 1);
+      continue;
+    }
     const base = token.slice(token.lastIndexOf("/") + 1);
-    if (base !== token) idx.set(base, (idx.get(base) ?? 0) + 1);
+    if (base !== token && wanted.has(base)) hits.set(base, (hits.get(base) ?? 0) + 1);
   }
-  return idx;
+  return hits;
 }
 
-/** 某个名字被提到几次。查索引，不扫正文 */
-const mentionCount = (idx: ReadonlyMap<string, number>, base: string): number => idx.get(base) ?? 0;
 
 function conventionRefs(
   snap: { files: ReadonlyMap<string, string>; code: readonly string[]; declares: readonly string[] },
@@ -219,16 +231,19 @@ function conventionRefs(
   const haystack = hay.join("\n");
   if (haystack === "") return [];
 
-  // 一次扫描建索引，之后每个候选 O(1) 查表。
-  // 原来是逐个候选在整段正文里 includes + countOf，候选几百个、正文几 MB，
-  // vue 上实测这一段就是 ~2 秒/commit。
-  const idx = mentionIndex(haystack);
+  // 先收集候选名，再单趟扫描计数。见 mentionCounts 的说明。
+  const wanted = new Set<string>();
+  for (const f of candidates) {
+    const base = f.slice(f.lastIndexOf("/") + 1);
+    if (base.length >= 5) wanted.add(base);
+  }
+  const hits = mentionCounts(haystack, wanted);
 
   const out: string[] = [];
   for (const f of candidates) {
     const base = f.slice(f.lastIndexOf("/") + 1);
     if (base.length < 5) continue;
-    const total = mentionCount(idx, base);
+    const total = hits.get(base) ?? 0;
     if (total === 0) continue;
     const own = info.get(snap.files.get(f) ?? "")?.text ?? "";
     if (total > countOf(own, base)) out.push(f);
@@ -345,8 +360,13 @@ function entryPoints(
     const t = declaresText.get(snap.files.get(f) ?? "");
     if (t) hay.push(t);
   }
-  // 同样的道理：一次扫描建索引，不要对每个代码文件再扫一遍文档。
-  const docIdx = mentionIndex(hay.join("\n"));
+  // 同样的道理：先收集关心的名字，再单趟扫描。
+  const docWanted = new Set<string>();
+  for (const f of snap.code) {
+    const b = f.slice(f.lastIndexOf("/") + 1);
+    if (b.length >= 5) docWanted.add(b);
+  }
+  const docHits = mentionCounts(hay.join("\n"), docWanted);
 
   for (const f of snap.code) {
     if (TOOL_LOADED.test(f)) {
@@ -377,7 +397,7 @@ function entryPoints(
       continue;
     }
     const base = f.slice(f.lastIndexOf("/") + 1);
-    if (base.length >= 5 && mentionCount(docIdx, base) > 0) {
+    if (base.length >= 5 && (docHits.get(base) ?? 0) > 0) {
       out.set(f, "被文档或配置按文件名点名");
     }
   }
