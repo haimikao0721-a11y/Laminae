@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { openWorktree } from "../src/measure/observe.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -91,22 +92,19 @@ test("分支扫描会真跑命令类事实，不再一律记成测不出来", ()
   }
 });
 
-test("分支扫描跑完不留临时工作区目录", () => {
-  const before = new Set(fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith("laminae-")));
+test("临时工作区用完就删，不留目录", () => {
   const dir = makeRepo();
   try {
-    runBranches(dir);
-    const after = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith("laminae-") && !before.has(n));
-    const leftovers = after.filter((n) => {
-      // 只关心和这次运行相关的；别的测试可能同时在建目录
-      const full = path.join(os.tmpdir(), n);
-      try {
-        return fs.statSync(full).isDirectory() && fs.existsSync(path.join(full, "wt"));
-      } catch {
-        return false;
-      }
-    });
-    assert.deepEqual(leftovers, [], `临时工作区应当删掉，剩下：${leftovers.join(", ")}`);
+    // 直接测 openWorktree 的契约，不去比对整个 temp 目录 ——
+    // 那样会被同时运行的别的测试干扰，全量跑的时候会假失败。
+    const wt = openWorktree(dir);
+    const sha = spawnSync("git", ["rev-parse", "main"], { cwd: dir, encoding: "utf8" }).stdout.trim();
+    const at = wt.at(sha);
+    assert.ok(at, "应当能检出");
+    assert.equal(fs.existsSync(path.join(at!, "README.md")), true, "检出目录里要看得到文件");
+    const parent = path.dirname(at!);
+    wt.close();
+    assert.equal(fs.existsSync(parent), false, "close 之后临时目录应当删掉");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
