@@ -11,7 +11,7 @@ import path from "node:path";
 import { isSupportedCode } from "./lang.ts";
 
 /** 认作代码文件的扩展名。和 lang.ts 里支持的语言一致 */
-export const CODE_EXT = /\.(?:[cm]?[jt]sx?|py|vue|svelte)$/;
+export const CODE_EXT = /\.(?:[cm]?[jt]sx?|py|vue|svelte|astro)$/;
 
 /** 测试文件：目录名或文件名带 test / spec。图上默认折掉，不然它们会盖过真正的模块关系 */
 export function isTestFile(file: string): boolean {
@@ -169,6 +169,17 @@ function resolveDirectory(dir: string, env: ResolveEnv): string | null {
  *
  * 取不到 <script> 就返回空串 —— 那样这个文件没有任何引用，而不是退回去把整个文件当 JS。
  */
+/**
+ * Astro 组件的 import 写在文件最前面的一段 `---` 围栏里，不是 <script> 块。
+ *
+ * 这一段同样能 import。archify 的 website 里 `../data/community` 就是从
+ * .astro 的围栏里引的，而 .astro 原来不在代码文件范围内，于是那两个文件被判成孤立。
+ */
+export function astroFrontmatter(text: string): string {
+  const m = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+  return m ? (m[1] ?? "") : "";
+}
+
 export function sfcScript(text: string): string {
   const parts: string[] = [];
   for (const m of text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) parts.push(m[1] ?? "");
