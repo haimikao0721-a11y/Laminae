@@ -318,6 +318,7 @@ dist/          app.ts 编译后的产物（入库，渲染时内联进 HTML）
 test/          单元测试与端到端测试
 scripts/       流程脚本
   run.ts         全流程
+  init.ts        从文档挑说法，在 HEAD 上核一遍，写成 claims.json
   diff.ts        比较两次运行：改了一条规则之后，结论从哪一条开始不一样
   setup.ps1      环境检查（Windows）
   setup.sh       环境检查（macOS / Linux）
@@ -334,12 +335,26 @@ docs/          设计规格（SPEC.md）、参考（REFERENCE.md）、说法模�
 
 laminae 本身不含任何项目的路径、数字或文件名。换仓库时只换输入，不换代码：
 
-1. **先捞草稿，不要从空白文件开始**。`node <laminae>/src/suggest.ts` 会扫文档里的数字和路径，打印一份 `claims.json` 草稿。草稿里的 `fact` 多半是占位，要人改。
-2. **在 HEAD 上核对一遍再定稿**。`node <laminae>/src/lookup.ts 草稿.json` 会把它实际捕获到的文本和事实值打出来。这一步不跑命令，只数仓库，几秒钟。
-3. 对上了再写进 `.laminae/claims.json`。挑说法时对照 [docs/PATTERNS.md](docs/PATTERNS.md)。
+1. **用一条命令出草稿，不要从空白文件开始**：
+
+   ```bash
+   node <laminae>/scripts/init.ts            # 交互式：逐条问，收的写进 .laminae/claims.json
+   node <laminae>/scripts/init.ts --dry-run  # 只看不写
+   ```
+
+   它会把文档里「像是有个数字」的句子挑出来，逐条在 HEAD 上核对，摆出三样东西：
+   **捕获到的是不是那句话**、**事实量出来的是什么**、**这条的事实是不是占位**。
+
+2. **把占位的事实改成该数的东西**。草稿里的 `fact` 多半是「数所有文件」这类默认值，
+   量出来的数和文档那句话没关系。**locator 可以收，fact 必须改。** 改哪个字段见 [docs/PATTERNS.md](docs/PATTERNS.md)。
+
+3. **改完再核一遍**：`node <laminae>/src/lookup.ts`。这一步不跑命令，只数仓库，几秒钟。
+
 4. 跑 `scripts/run.ts`。
 
-真正影响能不能用起来的不是代码，是**挑得准不准**：一条说法选错（`locator` 匹配到别的句子、`fact` 数错了东西），整张图就有一个位置是假的。所以第 2 步不能跳。
+真正影响能不能用起来的不是代码，是**挑得准不准**：一条说法选错（`locator` 匹配到别的句子、`fact` 数错了东西），整张图就有一个位置是假的。所以第 3 步不能跳。
+
+**`init` 只提议和核对，不判真假。** 它不替你决定这句话该不该这样写，也不替你判断代码里做没做到 —— 它只保证 `locator` 抓对了文字。
 
 **改完解析或规则之后**，用 `scripts/diff.ts` 看影响：
 
