@@ -214,6 +214,35 @@ Two kinds: **defects in the tool** (it accuses wrongly, misses things, or crashe
 
 ---
 
+### Code samples inside comments and strings were parsed as real code
+
+**Symptom** On vue, "one layer down" reported an empty function named `xxx`, plus `NODE` and `foo`. The source was two comment lines:
+
+```js
+// Note: functions inside this closure should use `const xxx = () => {}`
+// no: function NODE() {}
+```
+
+**Cause** `findFunctions` scanned the raw text and did not skip comments or strings. Writing code samples in comments is common, and once one matches, `hollowFunctions`, `delegatedCalls` and `classifyDepth` all go wrong with it.
+
+**What changed** Added `maskNonCode`: the **body** of comments and strings is replaced with spaces, keeping length, newlines and the quotes themselves. Length is preserved so offsets stay valid — a match position can still be used to slice the original text for line numbers. All three syntax modules and `delegatedCalls` now scan the masked text. On vue the current count went 12 → 7.
+
+**Lesson** When a regex scans source code, code inside comments is the most common source of false positives.
+
+---
+
+### Type declaration files were counted as empty implementations
+
+**Symptom** 4 of the remaining 7 were in type-test files under `dts-test` — `declare function foo(...)` treated as "the body is empty".
+
+**Cause** A type declaration file cannot contain an implementation by definition. **Type declarations were being read as code.**
+
+**What changed** A `TYPE_ONLY` regex, added to both skip conditions.
+
+**Lesson** The first regex only recognized `.d.ts` and did not match `*.test-d.ts` (it ends in `-d.ts`, not `.d.ts`). A test caught it immediately.
+
+---
+
 ## 2. My own operational mistakes
 
 These are not product bugs, but **they are easier to repeat than product bugs**, and each one nearly made me misdiagnose the tool.

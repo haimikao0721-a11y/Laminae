@@ -61,6 +61,72 @@ export const TRIVIAL_EXPR = /^(?:null|undefined|None|false|true|0|\[\]|\{\}|""|'
 export const stripComments = (text: string): string =>
   text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\n)\s*(\/\/|#)[^\n]*/g, "$1");
 
+/**
+ * 把注释和字符串的**正文**替换成空格，长度和换行都不变。
+ *
+ * 为什么需要它：`findFunctions` 直接扫原文时，注释里的代码样例会被当成真代码。
+ * vue 上就报出了这两个「空函数」：
+ *
+ *   // Note: functions inside this closure should use `const xxx = () => {}`
+ *   // no: function NODE() {}
+ *
+ * 这不是小概率 —— 注释里写代码样例是很常见的写法，而且一旦命中，
+ * hollowFunctions、delegatedCalls、classifyDepth 全都跟着错。
+ *
+ * 保留长度是为了偏移不变：匹配出来的位置还能直接拿去切原文取行号、取函数体。
+ * 保留引号本身，这样 `skipString` 一类按引号找边界的函数仍然работа。
+ *
+ * @param hash 这个语言里 `#` 是不是行注释（Python 是，JS 不是 —— JS 的 `#x` 是私有字段）
+ */
+export function maskNonCode(text: string, hash = false): string {
+  const out = text.split("");
+  const blank = (from: number, to: number): void => {
+    for (let k = from; k < to && k < out.length; k++) if (out[k] !== "\n") out[k] = " ";
+  };
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i]!;
+    if (c === '"' || c === "'" || c === "`") {
+      // 字符串：把里面的正文遮掉，引号留着
+      let j = i + 1;
+      while (j < text.length) {
+        if (text[j] === "\\") {
+          j += 2;
+          continue;
+        }
+        if (text[j] === c) break;
+        j++;
+      }
+      blank(i + 1, j);
+      i = j + 1;
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "/") {
+      const nl = text.indexOf("\n", i);
+      const end = nl < 0 ? text.length : nl;
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "*") {
+      const close = text.indexOf("*/", i + 2);
+      const end = close < 0 ? text.length : close + 2;
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    if (hash && c === "#") {
+      const nl = text.indexOf("\n", i);
+      const end = nl < 0 ? text.length : nl;
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+
 export const codeLines = (text: string): string[] =>
   stripComments(text)
     .split("\n")

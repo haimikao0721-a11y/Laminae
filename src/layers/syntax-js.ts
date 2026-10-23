@@ -7,13 +7,15 @@
  * 认不出的写法的处理原则和别处一致：宁可判「有实质代码」，也不猜成空实现 ——
  * 猜错的代价是给出假的红格子。
  */
-import { TRIVIAL_EXPR, bodyReason, classifyHandler, matchBrace, normRoute, readHandlerArg, trivialBody } from "./syntax.ts";
+import { TRIVIAL_EXPR, bodyReason, classifyHandler, matchBrace, normRoute, readHandlerArg, trivialBody, maskNonCode } from "./syntax.ts";
 import type { Binding, FoundFn, RouteDecl, SyntaxModule } from "./syntax.ts";
 
 const isJsForwardLine = (l: string): boolean => /^(?:import|export)\s/.test(l);
 const isExportFromLine = (l: string): boolean => /^export\s+(?:\*|\{)/.test(l) && /\bfrom\s+['"]/.test(l);
 
-function findFunctions(text: string): FoundFn[] {
+function findFunctions(raw: string): FoundFn[] {
+  // 注释和字符串里的代码样例不是代码。见 syntax.ts 里 maskNonCode 的说明。
+  const text = maskNonCode(raw, false);
   const out: FoundFn[] = [];
   const re =
     /(?:export\s+default\s+|export\s+)?(?:async\s+)?function\s*([A-Za-z_$][\w$]*)?\s*\([^)]*\)\s*\{|(?:export\s+default\s+|export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:function\s*\([^)]*\)|\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{|(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{/g;

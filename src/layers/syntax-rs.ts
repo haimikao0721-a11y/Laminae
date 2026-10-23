@@ -13,7 +13,7 @@
  *
  * 认不出结构时判「有实质代码」，不猜成空实现 —— 猜错的代价是给出假的红格子。
  */
-import { bodyReason, matchBrace, skipString } from "./syntax.ts";
+import { bodyReason, matchBrace, skipString, maskNonCode } from "./syntax.ts";
 import type { Binding, FoundFn, RouteDecl, SyntaxModule } from "./syntax.ts";
 
 /** `pub`、`pub(crate)`、`const`、`async`、`unsafe`、`extern "C"` 都可能出现在 fn 前面 */
@@ -39,7 +39,9 @@ function closingParen(text: string, open: number): number {
   return -1;
 }
 
-function findFunctions(text: string): FoundFn[] {
+function findFunctions(raw: string): FoundFn[] {
+  // 注释和字符串里的代码样例不是代码。见 syntax.ts 里 maskNonCode 的说明。
+  const text = maskNonCode(raw, false);
   const out: FoundFn[] = [];
   FN_HEAD.lastIndex = 0;
   let m: RegExpExecArray | null;
