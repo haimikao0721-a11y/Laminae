@@ -676,14 +676,21 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
     // calls-empty 不给 —— 它的距离要顺着「它调用的是谁」算出来，先给 0 会低估整条链。
     for (const [file, byName] of hollowAt)
       for (const [name, reason] of byName) if (reason !== "calls-empty") dist.set(`${file}\u0000${name}`, 0);
-    const visitedCall = new Set<string>();
+    /**
+     * 每条调用边「上次处理时用的距离」。
+     *
+     * 原来是个 visitedCall 集合：一条边只处理一次。分叉树上这是错的 ——
+     * 一条边第一次可能是从远处到达的（距离 3），后来才发现有条更近的路（距离 1），
+     * 但集合已经把它挡掉了，报出来的跳数就偏大。
+     * 现在记下上次用的距离，只有新距离确实更小才重新处理。
+     */
+    const seenAt = new Map<string, number>();
     const calls = c.layer.delegates ?? [];
     let progressed = true;
     while (progressed) {
       progressed = false;
       for (const d of calls) {
         const visit = `${d.file}\u0000${d.name}\u0000${d.callee}`;
-        if (visitedCall.has(visit)) continue;
         let target: string | null;
         let imported: string;
         if (d.local === true) {
@@ -701,14 +708,21 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
         // 测试里的桩函数、示例里的空 CLI，是写法本身，不是缺陷。
         // click 上「当前成立」的 47 条里 45 条在 tests/、2 条在 examples/，src/ 里一条都没有 ——
         // 把这些也报出来，等于把「设计如此」当成问题。
-        if (isTestFile(d.file) || ENTRY_DIR.test(d.file) || TYPE_ONLY.test(d.file)) { visitedCall.add(visit); continue; }
-        visitedCall.add(visit);
+        if (isTestFile(d.file) || ENTRY_DIR.test(d.file) || TYPE_ONLY.test(d.file)) { seenAt.set(visit, d0); continue; }
+        const last = seenAt.get(visit);
+        if (last !== undefined && last <= d0) continue;
+        seenAt.set(visit, d0);
         const hops = d0 + 1;
         const key = `${d.file}\u0000${d.name}\0calls-other`;
         mark(downFlags, key, i);
-        downLine.set(key, d.line);
-        downVia.set(key, `${target}:${imported}`);
-        downHops.set(key, hops);
+        // 分叉树上同一个函数可能经由多条路径到达空壳。报**最短**的那条：
+        // 它回答的是「最少几跳就到空壳」，而不是「最后算出来的是几跳」。
+        const prevHops = downHops.get(key);
+        if (prevHops === undefined || hops < prevHops) {
+          downLine.set(key, d.line);
+          downVia.set(key, `${target}:${imported}`);
+          downHops.set(key, hops);
+        }
         const self = `${d.file}\u0000${d.name}`;
         const prev = dist.get(self);
         if (prev === undefined || prev > hops) dist.set(self, hops);
