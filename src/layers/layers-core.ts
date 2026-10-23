@@ -817,7 +817,45 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
 
 export type FakeDepth = "empty" | "unimplemented" | "placeholder";
 
-export interface LayerReport {
+/**
+ * 证据等级。
+ *
+ * 这是整个工具最要紧的一个分类：**这条结论能证明什么、不能证明什么**。
+ * 前面十几条误报几乎都是同一个形状 —— 把「本来就该是这样」当成「这里有问题」，
+ * 根子就是没有把「有出处」和「看形状猜」分开。
+ *
+ *   stated      有出处     文档自己写的、仓库自己声明的清单。错了是一跑就露
+ *   mentioned   有文本证据 名字在仓库某处被提到过。能证明有人提过这个名字，
+ *                          不能证明就是这个文件被用了
+ *   structural  只有结构事实 没有入边。是中性事实，不是缺陷
+ *   heuristic   看形状推断 函数体空不空、返回什么。只能请人看一眼，不能当结论
+ */
+export type Evidence = "stated" | "mentioned" | "structural" | "heuristic";
+
+export const EVIDENCE: Record<Evidence, { label: string; can: string; cannot: string }> = {
+  stated: {
+    label: "有出处",
+    can: "文档或仓库自己写明了这件事，可以当成核对结果",
+    cannot: "只能核对外面写了什么，不能替你判断该不该这样写",
+  },
+  mentioned: {
+    label: "有文本证据",
+    can: "仓库某处提到过这个名字，说明有人在按它办事",
+    cannot: "提到名字不等于就是它，同名和举例都算提到",
+  },
+  structural: {
+    label: "只有结构事实",
+    can: "陈述一个中性事实：没有别的代码引用它",
+    cannot: "不能推出它没用。入口、示例、按路径加载的东西天生没有入边",
+  },
+  heuristic: {
+    label: "看形状推断",
+    can: "请人看一眼：函数体是空的、只返回常量这类形状值得复核",
+    cannot: "不能当缺陷。设计如此的写法到处都是，这一档整类整类地错过",
+  },
+};
+
+interface LayerBuckets {
   /** 说法为真或想法已完成，但指着的文件是假实现：空的、写着没实现、或函数只返回空值 */
   hollow: { kind: "claim" | "idea"; label: string; file: string; depth: FakeDepth; alive: Interval[] }[];
   /**
@@ -838,6 +876,14 @@ export interface LayerReport {
   clues: { kind: string; file: string; alive: Interval[] }[];
   unsupported: { file: string; alive: Interval[] }[];
   down: { file: string; name: string; line: number; reason: FnReason; via: string; hops: number; holds: string[]; atHead: boolean; alive: Interval[] }[];
+}
+
+/** 每个桶的证据等级。键是桶名的全集 —— 加一个桶不写等级，编译就过不去 */
+export type BucketEvidence = Record<keyof LayerBuckets, Evidence>;
+
+export interface LayerReport extends LayerBuckets {
+  /** 每个桶的证据等级。见 Evidence 的说明 */
+  evidence: BucketEvidence;
 }
 
 const HOLDS = 0; // 说法的「真」和想法的「已满足」都是 0
@@ -1002,5 +1048,28 @@ export function joinLayers(data: LayersData, upper: readonly UpperLayer[]): Laye
     clues: data.clues,
     unsupported: data.unsupported,
     down,
+    /**
+     * 每个桶凭什么得出这个结论。
+     *
+     * 这一栏是给读报告的人看的，也是给自己定规矩的：
+     *   hollow / covers / down  看的是代码形状，只能请人复核
+     *   unproven                只排除了上面两类，没有正面证据
+     *   orphans                 中性事实：没有入边
+     *   convention              名字被提到过
+     *   entry / contracts       仓库自己写明了（清单、装饰器、目录角色）
+     *   unsupported / clues     事实陈述
+     */
+    evidence: {
+      hollow: "heuristic",
+      covers: "heuristic",
+      unproven: "heuristic",
+      orphans: "structural",
+      convention: "mentioned",
+      entry: "stated",
+      contracts: "stated",
+      clues: "mentioned",
+      unsupported: "stated",
+      down: "heuristic",
+    },
   };
 }
