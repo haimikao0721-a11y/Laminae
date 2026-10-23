@@ -20,7 +20,7 @@ import type { ResolveEnv } from "./imports.ts";
 import { codeLines, isNonCodeLine, maskNonCode, normRoute } from "./syntax.ts";
 import type { Binding, FnReason, HandlerKind, PyMount, PyRouter, RouteDecl } from "./syntax.ts";
 import { MODULES, allBindings, allMounts, allRouters, allRoutes, pickModule } from "./syntax-registry.ts";
-import { ENTRY_DIR } from "./scan.ts";
+import { ENTRY_DIR, ENTRY_DIR_ANY } from "./scan.ts";
 
 /**
  * 类型声明文件。`declare function foo(...)` 本来就没有函数体，
@@ -639,7 +639,7 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
       // 测试里的桩函数、示例里的空 CLI，是写法本身，不是缺陷。
       // click 上「当前成立」的 47 条里 45 条在 tests/、2 条在 examples/，src/ 里一条都没有。
       // 把它们报成「需要人工复核」，等于让真正的问题排不进前 40 条。
-      if (isTestFile(h.file) || ENTRY_DIR.test(h.file) || TYPE_ONLY.test(h.file)) continue;
+      if (isTestFile(h.file) || ENTRY_DIR.test(h.file) || ENTRY_DIR_ANY.test(h.file) || TYPE_ONLY.test(h.file)) continue;
       // 箭头函数不谈「需要复核」。
       //
       // 箭头是**表达式**，JS 里写常量谓词和空操作就是这个样子：
