@@ -26,6 +26,8 @@ import fs from "node:fs";
 import { parseClaims } from "../src/measure/claims.ts";
 import { DEFAULT_TOLERANCE } from "../src/measure/compare.ts";
 import { evalFact, isObserved, isReferential } from "../src/measure/facts.ts";
+import { nextObservation, openWorktree, runCommand } from "../src/measure/observe.ts";
+import type { ObserveCache } from "../src/measure/observe.ts";
 import { git, openTrees } from "../src/core/gitutil.ts";
 import { CLAIMS_PATH } from "../src/core/paths.ts";
 
@@ -94,13 +96,33 @@ function truth(v: number | null): "真" | "假" | "测不出来" {
   return v === 1 ? "真" : "假";
 }
 
-function evaluate(sha: string, claims: ReturnType<typeof parseClaims>, locators: Map<string, RegExp>, trees: ReturnType<typeof openTrees>): Map<string, number | null> {
+function evaluate(
+  sha: string,
+  claims: ReturnType<typeof parseClaims>,
+  locators: Map<string, RegExp>,
+  trees: ReturnType<typeof openTrees>,
+  observer: { at(sha: string): string | null; caches: Map<string, ObserveCache | undefined> },
+): Map<string, number | null> {
   const tree = trees.at(sha, () => []);
   const vals = new Map<string, number | null>();
   for (const c of claims) {
-    // 命令类事实要工作区，这里不跑。不是「测不出来」，是这一版故意不做
+    // 命令类事实：检出到临时 worktree 再跑。
+    //
+    // 原来这里是直接记 null（测不出来）。但那等于「这一版看不见」，
+    // 不是「测不出来」—— 分支上到底跑不跑得通，是能测的，只是要付一次检出。
+    // 所以现在真跑；watch 指定的文件没变就不重跑，靠 nextObservation 的缓存。
     if (isObserved(c.fact)) {
-      vals.set(c.id, null);
+      const observed = nextObservation({
+        fact: c.fact,
+        sha,
+        paths: c.fact.watch ?? [],
+        read: (file) => tree.read(file),
+        cache: observer.caches.get(c.id),
+        materialize: observer.at,
+        run: runCommand,
+      });
+      observer.caches.set(c.id, observed.cache);
+      vals.set(c.id, observed.value);
       continue;
     }
     if (isReferential(c.fact)) {
@@ -120,8 +142,12 @@ function main(): void {
   if (claims.length === 0) throw new Error("claims.json 里没有说法");
 
   const observed = claims.filter((c) => isObserved(c.fact)).length;
+  const observer = {
+    ...openWorktree(process.cwd()),
+    caches: new Map<string, ObserveCache | undefined>(),
+  };
   if (observed > 0) {
-    console.log(`注意：${observed} 条说法要靠跑命令，这一版在分支上不跑，记成「测不出来」。`);
+    console.log(`要靠跑命令的说法：${observed} 条。会检出到临时工作区执行，跑完删掉，不动主目录。`);
     console.log("");
   }
 
@@ -132,7 +158,7 @@ function main(): void {
 
   const trees = openTrees();
   const locators = new Map(claims.map((c) => [c.id, new RegExp(c.locator)]));
-  const mainVals = evaluate(mainSha, claims, locators, trees);
+  const mainVals = evaluate(mainSha, claims, locators, trees, observer);
 
   const all = branches();
   const results: BranchResult[] = [];
@@ -143,7 +169,7 @@ function main(): void {
       skippedMerged++;
       continue;
     }
-    const vals = evaluate(b.sha, claims, locators, trees);
+    const vals = evaluate(b.sha, claims, locators, trees, observer);
     const { ahead, behind } = aheadBehind(mainSha, b.sha);
     const date = git(["log", "-1", "--format=%ad", "--date=short", b.sha])?.trim() ?? "";
     const rows: Row[] = [];
@@ -166,6 +192,9 @@ function main(): void {
     }
     results.push({ name: b.name, sha: b.sha, date, ahead, behind, rows });
   }
+
+  // 临时工作区要收掉。放在这里是因为下面还有写文件、打印，出错提前返回也不会漏
+  observer.close();
 
   const payload = { main: { ref: mainRef, sha: mainSha }, skippedMerged, branches: results };
 
