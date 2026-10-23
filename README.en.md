@@ -272,6 +272,7 @@ scripts/       pipeline scripts
   run.ts         the whole pipeline
   setup.ps1      environment check (Windows)
   setup.sh       environment check (macOS / Linux)
+  diff.ts        compare two runs: after changing a rule, which conclusion changed first
   build-web.ts   compile the browser side to dist/app.js
   snapshot.ts    headless Chrome snapshots
 docs/          design spec (SPEC.md), reference (REFERENCE.md), claim patterns (PATTERNS.md)
@@ -285,11 +286,20 @@ For design details see [docs/SPEC.md](docs/SPEC.en.md). When picking claims in a
 
 laminae itself contains no project's paths, numbers, or file names. Switching repositories changes only the input, not the code:
 
-1. Write `.laminae/claims.json` in that repository. When picking claims, check against [docs/PATTERNS.md](docs/PATTERNS.en.md).
-2. Use `src/suggest.ts` to fish out a draft first, then check it once at HEAD with `src/lookup.ts`, and only write it in after it lines up.
-3. Run `scripts/run.ts`.
+1. **Fish out a draft first; do not start from a blank file.** `node <laminae>/src/suggest.ts` scans the documents for numbers and paths and prints a `claims.json` draft. The `fact` in the draft is usually a placeholder and needs a human to fix it.
+2. **Check it at HEAD before committing to it.** `node <laminae>/src/lookup.ts draft.json` prints the text it actually captured and the fact's value. This step runs no commands, it only counts the repository, so it takes seconds.
+3. Only after it lines up, write it into `.laminae/claims.json`. When picking claims, check against [docs/PATTERNS.en.md](docs/PATTERNS.en.md).
+4. Run `scripts/run.ts`.
 
-What really decides whether this can be put to use is not the code but **whether the claims are picked accurately**: pick one claim wrong (`locator` matching a different sentence, `fact` counting the wrong thing) and the whole grid has one false position. So the `lookup` step cannot be skipped.
+What really decides whether this can be put to use is not the code but **whether the claims are picked accurately**: pick one claim wrong (`locator` matching a different sentence, `fact` counting the wrong thing) and the whole grid has one false position. So step 2 cannot be skipped.
+
+**After changing a parser or a rule**, use `scripts/diff.ts` to see what it affected:
+
+```bash
+node <laminae>/scripts/diff.ts <older run> <newer run>
+```
+
+It compares the two runs' claim state sequences, the added and removed entries in the layer buckets, the graph's nodes and edges, and the tally. Maintenance on that side (syntax modules, the entry table, the reference graph, hollow detection) is a permanent cost, and every round is "hit one more real repository, check the red cells, add a rule that has a source" — `diff` is the measuring stick for that loop.
 
 ---
 
