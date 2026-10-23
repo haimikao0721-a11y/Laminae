@@ -96,20 +96,17 @@ Two classes were fixed: code samples inside comments and strings (`xxx`, `NODE`,
 
 ### 3. The graph stage takes 79% of the time
 
-**Symptom** On vue (6513 mainline commits):
+**Resolved.** The whole pipeline used to take 1397 seconds, with the graph step alone at 1102. After four rounds:
 
 ```
-measure      290s
-graph       1102s   ← 79%
-ideas          3.6s
-build-data     0.5s
-render         0.2s
-verify         0.9s
+per commit     212.5 ms → 63.8 ms (3.3×)
+end to end     1397 s → 465 s
+graph step     1102 s → 269 s (4.1×)
 ```
 
-**Impact** Another doubling in size will not finish. A repository the size of django is out of reach.
+The four rounds: dropping a backtracking regex (1.04×), processing only changed files (2.05×), replacing 6513 git calls with 2 (3.10×), and rewriting masking with slices (3.33×). Details and the pitfalls are in [Pitfalls](LESSONS.en.md).
 
-**This is the next thing to optimise.**
+**The remaining hotspot** after the 3× speedup is `maskNonCode` at 29.8%. But it is the same story as before: a profile percentage is not recoverable time, and merging it did not move wall clock noticeably. **The next step is not micro-optimisation but doing fewer passes.**
 
 ---
 
