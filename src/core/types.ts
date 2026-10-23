@@ -196,6 +196,8 @@ export interface ClaimTimeline {
 /** 汇总 */
 export interface Summary {
   claimCount: number;
+  /** 这次运行没跑命令类事实（--no-commands），报告里要说清楚 */
+  commandsSkipped?: boolean;
   commitCount: number;
   spanHours: number;
   everFalse: number;

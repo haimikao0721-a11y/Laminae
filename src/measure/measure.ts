@@ -20,6 +20,8 @@ import { ensureExcluded } from "../core/exclude.ts";
 import { evalFact, factFiles, globToRegExp, isHold, isObserved, isReferential } from "./facts.ts";
 import { git, openTrees } from "../core/gitutil.ts";
 import { nextObservation, openWorktree, runCommand } from "./observe.ts";
+import { formatPreflight, previewCommands } from "./preflight.ts";
+import type { ClaimsSource } from "./preflight.ts";
 import type { ObserveCache } from "./observe.ts";
 import { CLAIMS_PATH, DATA_DIR } from "../core/paths.ts";
 import type { MeasuredCommit } from "../core/types.ts";
@@ -92,7 +94,24 @@ const measured: MeasuredCommit[] = [];
   const docBodies: { sha: string; short: string; files: Record<string, number> }[] = [];
 
 const observed = claims.filter((c) => isObserved(c.fact));
-const work = observed.length > 0 ? openWorktree(REPO) : null;
+
+// 命令类事实会执行命令，而 claims.json 可以是随仓库提交进来的。
+// 跑之前先把要执行的东西摊开 —— 见 preflight.ts 里的说明。
+const NO_COMMANDS = process.argv.includes("--no-commands");
+const claimsSource: ClaimsSource = (() => {
+  const rel = path.relative(REPO, CLAIMS_PATH).replace(/\\/g, "/");
+  const tracked = git(["ls-files", "--error-unmatch", rel]) !== null;
+  const meta = tracked ? git(["log", "-1", "--format=%an <%ae>|%ad", "--date=short", "--", rel]) : null;
+  const [who, when] = (meta ?? "").split("|");
+  return { file: rel, tracked, lastAuthor: who ?? null, lastDate: when ?? null };
+})();
+const previews = previewCommands(claims, commits.length);
+const preflight = formatPreflight(previews, claimsSource, NO_COMMANDS);
+if (preflight) console.log(preflight);
+
+// --no-commands：连工作区都不开。观测事实自然全部落到「测不出来」，
+// 而不是「假」—— 没跑就是没跑。
+const work = !NO_COMMANDS && observed.length > 0 ? openWorktree(REPO) : null;
 const trees = openTrees();
 /** 这个 commit 上真正要读正文的文件：说法点名的，再加上 watch 命中的 */
 const pickFiles = (paths: readonly string[]): string[] => {
@@ -107,9 +126,7 @@ const pickFiles = (paths: readonly string[]): string[] => {
   return [...need];
 };
 const observeCache = new Map<string, ObserveCache>();
-if (observed.length > 0) {
-  console.log(`要跑的事实：${observed.length} 条（临时工作区，不改主目录）`);
-}
+if (work) console.log(`临时工作区已开，跑完删掉，不改主目录。`);
 
 try {
   for (const c of commits) {
@@ -160,7 +177,7 @@ try {
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.writeFileSync(
   path.join(DATA_DIR, "facts.json"),
-  JSON.stringify({ repo: REPO, generatedAt: new Date().toISOString(), commitCount: commits.length, commits: measured }, null, 2) + "\n",
+  JSON.stringify({ repo: REPO, generatedAt: new Date().toISOString(), commitCount: commits.length, commandsSkipped: NO_COMMANDS, commits: measured }, null, 2) + "\n",
   "utf8",
 );
 fs.writeFileSync(path.join(DATA_DIR, "docs-by-commit.json"), JSON.stringify({ texts: docTexts, commits: docBodies }) + "\n", "utf8");
