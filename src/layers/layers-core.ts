@@ -17,10 +17,17 @@
  */
 import { isTestFile, resolveJs } from "./imports.ts";
 import type { ResolveEnv } from "./imports.ts";
-import { codeLines, isNonCodeLine, normRoute } from "./syntax.ts";
+import { codeLines, isNonCodeLine, maskNonCode, normRoute } from "./syntax.ts";
 import type { Binding, FnReason, HandlerKind, PyMount, PyRouter, RouteDecl } from "./syntax.ts";
 import { MODULES, allBindings, allMounts, allRouters, allRoutes, pickModule } from "./syntax-registry.ts";
 import { ENTRY_DIR } from "./scan.ts";
+
+/**
+ * 类型声明文件。`declare function foo(...)` 本来就没有函数体，
+ * `.d.ts` 里也不可能写到实现 —— 把它们当成「空实现」是拿类型当代码看。
+ * vue 的 dts-test 目录里一整批就是这么报出来的。
+ */
+const TYPE_ONLY = /\.(?:test-)?d\.tsx?$/;
 import type { Interval } from "../core/types.ts";
 
 /**
@@ -81,7 +88,10 @@ const REASON_TEXT: Record<FnReason, string> = {
  *
  * 仍然只记名字，不记参数、不记返回值。名字重复的合并成一条。
  */
-export function delegatedCalls(text: string): { name: string; line: number; callee: string; strict: boolean; local: boolean }[] {
+export function delegatedCalls(rawText: string): { name: string; line: number; callee: string; strict: boolean; local: boolean }[] {
+  // 注释里的调用不是调用。findFunctions 已经按遮罩后的文本算偏移，这里跟着遮，
+  // 免得函数体里一句注释掉的调用被当成真的调用链。
+  const text = maskNonCode(rawText, /^\s*(?:def |class |import |from )/m.test(rawText));
   const fns = pickModule(text).findFunctions(text);
   if (fns.length === 0) return [];
   const localHollow = new Set(fns.filter((f) => f.reason && f.name).map((f) => f.name!));
@@ -619,7 +629,7 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
       // 测试里的桩函数、示例里的空 CLI，是写法本身，不是缺陷。
       // click 上「当前成立」的 47 条里 45 条在 tests/、2 条在 examples/，src/ 里一条都没有。
       // 把它们报成「需要人工复核」，等于让真正的问题排不进前 40 条。
-      if (isTestFile(h.file) || ENTRY_DIR.test(h.file)) continue;
+      if (isTestFile(h.file) || ENTRY_DIR.test(h.file) || TYPE_ONLY.test(h.file)) continue;
       const key = `${h.file}\u0000${h.name}\u0000${h.reason}`;
       mark(downFlags, key, i);
       downLine.set(key, h.line);
@@ -671,7 +681,7 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
         // 测试里的桩函数、示例里的空 CLI，是写法本身，不是缺陷。
         // click 上「当前成立」的 47 条里 45 条在 tests/、2 条在 examples/，src/ 里一条都没有 ——
         // 把这些也报出来，等于把「设计如此」当成问题。
-        if (isTestFile(d.file) || ENTRY_DIR.test(d.file)) { visitedCall.add(visit); continue; }
+        if (isTestFile(d.file) || ENTRY_DIR.test(d.file) || TYPE_ONLY.test(d.file)) { visitedCall.add(visit); continue; }
         visitedCall.add(visit);
         const hops = d0 + 1;
         const key = `${d.file}\u0000${d.name}\0calls-other`;

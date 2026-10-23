@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { jsModule } from "../src/layers/syntax-js.ts";
 import { buildLayers, classifyDepth, delegatedCalls, hollowFunctions, isEntryPoint, isStub, joinLayers, mountRoutes, scanFileLayer } from "../src/layers/layers-core.ts";
 import type { CommitLayer, LayerCommit } from "../src/layers/layers-core.ts";
 import { runFile, runLaminae, TestRepo, writeClaims } from "./helpers.ts";
@@ -429,4 +430,32 @@ test("说法：locator 从没匹配到标成 ruleMiss，捕获多带字符给出
   } finally {
     repo.dispose();
   }
+});
+
+
+test("函数识别：注释和字符串里的代码样例不算函数", () => {
+  // vue 上报出过两个「空函数」，实际是注释里的示例：
+  //   // Note: functions inside this closure should use `const xxx = () => {}`
+  //   // no: function NODE() {}
+  // 一旦命中，hollowFunctions、delegatedCalls、classifyDepth 全都跟着错。
+  const text = [
+    "// 用法：const xxx = () => {}",
+    "// no: function NODE() {}",
+    'const s = "function fake() {}"',
+    "function real() {}",
+  ].join("\n");
+  const names = jsModule.findFunctions(text).map((f) => f.name);
+  assert.deepEqual(names, ["real"], "只认真正的那个");
+});
+
+test("函数识别：函数体里注释掉的调用不算调用链", () => {
+  const text = [
+    "function helper() {}",
+    "function run() {",
+    "  // return helper()",
+    "  return 1",
+    "}",
+  ].join("\n");
+  const calls = delegatedCalls(text).filter((d) => d.name === "run");
+  assert.deepEqual(calls, [], "注释里的 helper() 不该被当成调用");
 });

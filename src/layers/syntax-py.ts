@@ -8,12 +8,14 @@
  * 已知限制（写得准比写得全重要）：跨行的 `from x import (\n a,\n b)` 只读到第一行的名字。
  * 这里按行解析，结构上就读不到第二行。真正的解法是接 Python 的 ast，见 docs/LANGUAGES.md。
  */
-import { bodyReason, normRoute, readParen } from "./syntax.ts";
+import { bodyReason, normRoute, readParen, maskNonCode } from "./syntax.ts";
 import type { Binding, FoundFn, PyMount, PyRouter, RouteDecl, SyntaxModule } from "./syntax.ts";
 
 const isPyForwardLine = (l: string): boolean => /^from\s+\./.test(l) || /^import\s+\./.test(l);
 
-function findPythonFunctions(text: string): FoundFn[] {
+function findPythonFunctions(raw: string): FoundFn[] {
+  // 注释和字符串里的代码样例不是代码。Python 里 # 是行注释，所以 hash = true。
+  const text = maskNonCode(raw, true);
   const lines = text.split("\n");
   const out: FoundFn[] = [];
   for (let i = 0; i < lines.length; i++) {
