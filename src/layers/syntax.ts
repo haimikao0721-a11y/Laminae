@@ -81,15 +81,18 @@ export const stripComments = (text: string): string =>
  * @param hash 这个语言里 `#` 是不是行注释（Python 是，JS 不是 —— JS 的 `#x` 是私有字段）
  */
 export function maskNonCode(text: string, hash = false): string {
-  const out = text.split("");
-  const blank = (from: number, to: number): void => {
-    for (let k = from; k < to && k < out.length; k++) if (out[k] !== "\n") out[k] = " ";
-  };
+  // 按切片累积，不把整份正文拆成字符数组。
+  // 第一版用的是 text.split("") + 改 + join("")：一个 100 KB 的文件会造出十万个
+  // 单字符串，profile 里这一段占了 29.8%，是整条流水线最大的一项。
+  const out: string[] = [];
+  let last = 0;
   let i = 0;
+  // 换行必须保留 —— 行号要靠它
+  const blank = (s: string): string => s.replace(/[^\n]/g, " ");
+
   while (i < text.length) {
     const c = text[i]!;
     if (c === '"' || c === "'" || c === "`") {
-      // 字符串：把里面的正文遮掉，引号留着
       let j = i + 1;
       while (j < text.length) {
         if (text[j] === "\\") {
@@ -99,33 +102,44 @@ export function maskNonCode(text: string, hash = false): string {
         if (text[j] === c) break;
         j++;
       }
-      blank(i + 1, j);
+      out.push(text.slice(last, i + 1));
+      out.push(blank(text.slice(i + 1, j)));
+      last = j;
+      // 要跳过收尾引号本身。停在它上面的话，下一轮会把它当成开引号，
+      // 于是从这个字符串的结尾一直吞到下一个引号（或者吞到文件尾）。
       i = j + 1;
       continue;
     }
     if (c === "/" && text[i + 1] === "/") {
       const nl = text.indexOf("\n", i);
-      const end = nl < 0 ? text.length : nl;
-      blank(i, end);
-      i = end;
+      const stop = nl < 0 ? text.length : nl;
+      out.push(text.slice(last, i));
+      out.push(blank(text.slice(i, stop)));
+      last = stop;
+      i = stop;
       continue;
     }
     if (c === "/" && text[i + 1] === "*") {
       const close = text.indexOf("*/", i + 2);
-      const end = close < 0 ? text.length : close + 2;
-      blank(i, end);
-      i = end;
+      const stop = close < 0 ? text.length : close + 2;
+      out.push(text.slice(last, i));
+      out.push(blank(text.slice(i, stop)));
+      last = stop;
+      i = stop;
       continue;
     }
     if (hash && c === "#") {
       const nl = text.indexOf("\n", i);
-      const end = nl < 0 ? text.length : nl;
-      blank(i, end);
-      i = end;
+      const stop = nl < 0 ? text.length : nl;
+      out.push(text.slice(last, i));
+      out.push(blank(text.slice(i, stop)));
+      last = stop;
+      i = stop;
       continue;
     }
     i++;
   }
+  out.push(text.slice(last));
   return out.join("");
 }
 
