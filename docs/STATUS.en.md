@@ -2,7 +2,7 @@
 
 [中文](STATUS.md) | [English](STATUS.en.md)
 
-As of `d136ada`. This document answers three things: **what it can do now**, **what it has been validated on**, and **what is still missing**.
+As of `8b79350`. This document answers three things: **what it can do now**, **what it has been validated on**, and **how far the tool can express itself**.
 
 ---
 
@@ -27,20 +27,21 @@ All real repositories, none constructed.
 
 | Repository | Size | Languages | Result |
 |---|---|---|---|
-| **archify** | 889 files / 1 commit | JS, MJS | isolated 64 → 4 (later 3); a clean repository |
-| **ElyOffice** | 1971 files / 1 commit | Rust, TS, Python | unsupported 703 → 0; graph 160 → 185 edges; orphans 9 → 6 (all six under site/video/, the recording scripts, which nothing imports) |
-| **pallets/click** | 178 files / 3379 commits (1384 on the mainline) / 1207 merges | Python | 3 of 3 claims judged correctly; isolated 15 → 0; one layer down 100 → 0 current |
-| **vuejs/core** | 703 files / 7234 commits (6513 on the mainline) / 35 merges | TS | isolated 170 → 4; all 4 claims true at HEAD; `verify` passes |
+| **archify** | 889 files / 1 commit | JS, MJS, Astro | orphans 64 → 0; one layer down 0 current |
+| **ElyOffice** | 1971 files / 1 commit | Rust, TS, Python | unsupported 703 → 0; graph 160 → 185 edges; orphans 9 → 6 (all six under `site/video/`, the recording scripts, which nothing imports) |
+| **pallets/click** | 178 files / 3379 commits (1384 on the mainline) / 1207 merges | Python | 3 of 3 claims judged correctly; orphans 15 → 0; one layer down 100 → 0 current |
+| **vuejs/core** | 703 files / 7234 commits (6513 on the mainline) / 35 merges | TS, Vue SFC | orphans 170 → 0; one layer down 12 → 0; all 4 claims true at HEAD; `verify` passes |
 
 There are also 6 fixtures built for specific behaviours (call chains, branches, merges, entry points, claim lint, one layer down).
 
-**235 tests**, of which 30 are end-to-end (they really spawn subprocesses and run the whole pipeline).
+**250 tests**, of which more than 30 are end-to-end (they really spawn subprocesses and run the whole pipeline).
 
 ### Why these
 
 - **click**: Python, real historical baggage (single file → multi-file refactor), textbook abstract methods, 1207 merges. It is the first repository that showed the tool could be wrong by whole categories at once.
 - **vue**: clearly larger (4.7× click's mainline commit count), a TS monorepo, used to stress performance.
-- **django was not chosen**: 34072 mainline commits × 7089 files, with an `ls-tree` of the whole tree per commit; estimated at tens of hours.
+- **archify**: an Astro site plus a lot of `.mjs`, used to validate single-file components and references inside templates.
+- **django was not chosen**: 34072 mainline commits × 7089 files, estimated at tens of hours.
 
 ---
 
@@ -51,87 +52,107 @@ There are also 6 fixtures built for specific behaviours (call chains, branches, 
 | Claim verdicts | 3 claims on click, 4 on vue, each cross-checked by hand; `verify` recomputes them from git |
 | Call-chain tracing | A four-level cross-file chain, intra-file nesting, and a call wrapped in an `if` all reach the bottom |
 | Branch "fixed but unmerged" | A fixture with an unmerged branch reports correctly |
+| Command facts on a branch | A constructed repository where the command fails on main and passes on the branch reports `main=false branch=true` |
 | Merge "the fix was lost" | A fixture whose merge dropped a file reports correctly |
 | Reproducible artifacts | The same payload rendered twice is byte-identical; a single edited character is caught |
-| Multiple languages | JS/TS, Python and Rust each have a syntax module; Rust was validated on 703 files in ElyOffice |
+| Multiple languages | JS/TS (including JSX and SFC), Python and Rust each have a syntax module; Rust was validated on 703 files in ElyOffice |
 
 ---
 
-## 4. Known issues, by severity
+## 4. Pitfalls that were fixed (each with before and after numbers)
 
-### 1. Imports inside `.vue` files are invisible
+### 1. References inside single-file components were invisible
 
-**Symptom** The last 4 isolated modules on vue all have the same cause: they are imported from a `.vue` file.
+**Before** vue had 170 orphan modules. Earlier rounds brought it to 4, and all four had the same cause: they were imported by `.vue` files, and `.vue` was not in the code file set, so the edge did not exist at all.
 
-```js
-// packages-private/sfc-playground/src/Header.vue
-import { downloadProject } from './download/download'
+**Now** `.vue` / `.svelte` / `.astro` all count as code files, and only the `<script>` block or the `---` fence is parsed — the template is HTML, and parsing it as JS treats things written in attributes as code.
+
+**vue 170 → 0, archify 64 → 0.**
+
+One correction along the way: I had written that the two archify files "really are unused". They are imported by `.astro` files. **"The tool found no evidence" and "there is no evidence" are not the same statement.**
+
+---
+
+### 2. A whole class of false positives in "one layer down"
+
+**Before** vue reported 12 "currently holding" findings, and sampling showed almost all were false. After fixing four classes it is 0:
+
+| Class | Example | Why it is not a defect |
+|---|---|---|
+| Code samples in comments | `// no: function NODE() {}` | a comment is not code |
+| Code samples in strings | `"const xxx = () => {}"` | a string is not code |
+| Type declarations | `declare function foo(...)` | a `.d.ts` cannot contain an implementation |
+| Arrow functions | `export const NO = () => false` | an arrow is an expression; emptiness says nothing about whether the feature exists |
+
+**vue 12 → 0.**
+
+The boundary of the last one matters: file-level judgement **still** uses that signal — a file whose only content is a constant arrow is still classified `placeholder` by `classifyDepth`. That says "this file contains little", which is not the same question as "does a human need to look at this function".
+
+---
+
+### 3. The graph stage: 79% of the whole pipeline
+
+**Before** the pipeline took 1397 seconds end to end, with the graph step alone at 1102.
+
+| Metric | Before | After |
+|---|---|---|
+| Per commit | 212.5 ms | **63.8 ms** (3.3×) |
+| End to end | 1397 s | **465 s** |
+| Graph step | 1102 s | **269 s** (4.1×) |
+
+Four rounds: dropping a backtracking regex (1.04×), **processing only the files that changed (2.05×)**, **replacing 6513 git calls with 2 (3.10×)**, and rewriting masking with slices (3.33×).
+
+**The most important lesson: a percentage in a profile is not recoverable wall-clock time.** I chased a 26.2% line for three rounds and gained 4%. What actually worked was turning "rescan 5.6 MB per commit" into "scan only what changed".
+
+---
+
+### 4. Hop counts on a forked tree
+
+**Before** the reported value was "the path computed last", not the shortest one. Two mistakes stacked: an unconditional overwrite, and each call edge being processed only once (so a shorter route discovered later was never recomputed).
+
+**Now** the shortest path is reported. On a forked tree `entry→near→base` is 2 hops, no longer 3.
+
+---
+
+### 5. Command facts: measurable on a branch too
+
+**Before** the branch scan recorded `test-passes` and friends as "cannot be measured", with a comment saying "this is not 'cannot be measured', this version deliberately skips them". **But what the user sees is "cannot be measured"**, and a comment cannot tell those two sentences apart.
+
+**Now** the commit is checked out into a temporary worktree and the command really runs; when the watched files are unchanged it is not rerun; the worktree is removed afterwards and the main working directory is never touched.
+
+Measured on a constructed repository (command fails on main, passes on the branch):
+
+```
+功能可用  main=假  分支=真  ← 分支上修好了，没合进来
 ```
 
-`.vue` is not in the set of code files, so the edge does not exist and `download.ts` looks unused.
-
-**Impact** Any Vue, Svelte or Astro project will have this whole class of false positives.
-
-**Fixing it means reading the `<script>` block of an SFC**, not adding another rule.
-
 ---
 
-### 2. "One layer down" has a whole class of false positives
+## 5. How far the tool can express itself
 
-**Symptom** vue originally had 12 "currently holding" findings. After fixing comment masking and type declarations, 3 remain, and all three are code that is meant to be this way:
+This section is not a to-do list. The five items above are all fixed; what follows is **not defects but limits of the frame of reference**.
 
-| Example | Why it is wrong |
-|---|---|
-| `shared/src/general.ts:13  NO  return-const` | `export const NO = () => false`, documented as "Always return false." — an intentional constant predicate |
-| `compiler-sfc/src/index.ts:89  shouldTransformRef` | `() => false`, a feature flag that is temporarily off |
-| `runtime-core/src/apiWatch.ts:186  watchStopHandle` | an empty handle that later gets `.stop` / `.resume` so the API shape holds |
+### 1. A file genuinely in use, with no textual evidence anywhere
 
-Two classes were fixed: code samples inside comments and strings (`xxx`, `NODE`, `foo`), and type declaration files (`declare function`).
+ElyOffice has 6 orphan modules, all under `site/video/` — the promo video recording scripts, run by hand, which nothing imports.
 
-**Impact** Arrow constant functions, type declarations and parsing artifacts will keep being reported.
+**This is a true finding, not a false positive.** A human reading the report sees "6 orphan modules, all in `site/video/`" and decides in ten seconds. What the tool can do is **narrow the scope this far**, not eliminate it.
 
-**Why it is not fixed** Its root cause is different from the ones above (it is not "this is how it is meant to be", it is "the parse is wrong"), and it needs its own design. Forcing it in would also suppress genuine stubs.
+### 2. It can see "nothing uses it now", not what the author intended
 
----
+A file that was never referenced since the day it was written looks identical, on the reference graph, to one that was used and then abandoned. The tool reports the first fact, not "this should be deleted".
 
-### 3. The graph stage takes 79% of the time
+### 3. A dynamically composed path can be followed one level at most
 
-**Resolved.** The whole pipeline used to take 1397 seconds, with the graph step alone at 1102. After four rounds:
+`` `render-${type}.mjs` `` is recognised. A path assembled from three variables inside `path.join(a, b, c)` is not. When it cannot tell, it does not guess — it reports the file and lets a human look.
 
-```
-per commit     212.5 ms → 63.8 ms (3.3×)
-end to end     1397 s → 465 s
-graph step     1102 s → 269 s (4.1×)
-```
+### 4. Language coverage
 
-The four rounds: dropping a backtracking regex (1.04×), processing only changed files (2.05×), replacing 6513 git calls with 2 (3.10×), and rewriting masking with slices (3.33×). Details and the pitfalls are in [Pitfalls](LESSONS.en.md).
+JS/TS (including JSX and SFC), Python and Rust have syntax modules. The extensions of Java, Go, C/C++, Kotlin, Swift, Ruby and PHP are recognised, but the tool only says **"recognised, no module"** — it does not judge true or false for them.
 
-**The remaining hotspot** after the 3× speedup is `maskNonCode` at 29.8%. But it is the same story as before: a profile percentage is not recoverable time, and merging it did not move wall clock noticeably. **The next step is not micro-optimisation but doing fewer passes.**
+### 5. Facts in a document have to be writable as a regex
 
----
-
-### 4. `hops` under-reports on a forked tree
-
-**Symptom** `hops` records the distance to the nearest stub. On a straight chain it is exact (measured on a four-level chain: `deep(1) mid2(1) mid1(2) top(3)`), but on a forked tree a function reaches a stub at different distances along different paths, and a single number loses that.
-
-**Impact** It currently only affects the confidence label, not the true/false verdict.
-
----
-
-### 5. Command facts need a working tree
-
-`test-passes`, `invariant-holds` and `output-unchanged` execute a command inside a temporary worktree, which is removed afterwards; the main working directory is never touched. **The branch scan runs them too**, and skips the run when the watched files are unchanged.
-
----
-
-## 5. Not done yet
-
-| Item | Why it is worth doing |
-|---|---|
-| Read the `<script>` block of `.vue` / `.svelte` | Removes the first class of false positives and covers the frontend ecosystem |
-| Optimise the 1102 seconds in graph | Decides whether larger repositories are reachable at all |
-| Classify the false positives in "one layer down" | Arrow constants, type declarations, parsing artifacts |
-| Locate a chain from a natural-language question | Today a function name or keyword must be supplied |
+A locator in `claims.json` is a regular expression, and the number in its first capture group is the value the document claims. If the document changes phrasing (say "about 20" becomes "a score or so"), the locator stops matching and the cell is recorded as "cannot be measured". **That is not the tool judging wrongly; it is the tool not seeing.**
 
 ---
 
