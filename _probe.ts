@@ -1,0 +1,11 @@
+﻿const { ImportScanner } = await import("./src/layers/scan.ts");
+const { git } = await import("./src/core/gitutil.ts");
+const shas = (git(["rev-list", "--first-parent", "--reverse", "HEAD"]) ?? "").split("\n").filter(Boolean);
+const sample = shas.slice(Math.max(0, shas.length - 80));
+const scanner = new ImportScanner();
+const t0 = Date.now();
+for (const sha of sample) await scanner.scan(sha);
+const ms = Date.now() - t0;
+console.log(`  ${sample.length} 个 commit: ${ms} ms   平均 ${(ms / sample.length).toFixed(1)} ms/commit`);
+console.log(`  外推到 ${shas.length} 个: 约 ${Math.round((ms / sample.length) * shas.length / 1000)} 秒`);
+console.log(`  改之前: 31345 ms，平均 391.8 ms/commit，外推 2552 秒`);

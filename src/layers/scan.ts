@@ -154,6 +154,33 @@ function countOf(hay: string, needle: string): number {
  * 查不到的不算 —— 宁可留下一个可疑的，也不要把真的孤立说成「用过」。
  * 名字太短的不算：`index.js`、`a.js` 这种命中率太高，当证据会盖住真的孤立。
  */
+
+/**
+ * 把一段正文里所有「像文件名」的 token 抽出来，记下各自出现的次数。
+ *
+ * 为什么需要它：原来是「对每个候选文件，在整段正文里搜一遍它的名字」——
+ * 候选几百个、正文几 MB，一个 commit 就退化成几百次全文扫描。
+ * 在 vue 上实测：526 个候选 × 5.6 MB ≈ 2 秒/commit，这是整条流水线真正的大头
+ * （一次 git ls-tree 只要 39 ms）。
+ *
+ * 现在改成一次扫描建索引，之后每个候选 O(1) 查表。
+ */
+function mentionIndex(text: string): Map<string, number> {
+  const idx = new Map<string, number>();
+  // 文件名：带扩展名的一串，允许路径分隔符和点
+  for (const m of text.matchAll(/[A-Za-z0-9_@][A-Za-z0-9_.\-]*(?:\/[A-Za-z0-9_.\-]+)*\.[A-Za-z0-9]{1,8}/g)) {
+    const token = m[0]!;
+    // 同时记两份：整串，和最后一段。文档里可能写全路径，也可能只写文件名
+    idx.set(token, (idx.get(token) ?? 0) + 1);
+    const base = token.slice(token.lastIndexOf("/") + 1);
+    if (base !== token) idx.set(base, (idx.get(base) ?? 0) + 1);
+  }
+  return idx;
+}
+
+/** 某个名字被提到几次。查索引，不扫正文 */
+const mentionCount = (idx: ReadonlyMap<string, number>, base: string): number => idx.get(base) ?? 0;
+
 function conventionRefs(
   snap: { files: ReadonlyMap<string, string>; code: readonly string[]; declares: readonly string[] },
   edges: readonly (readonly [string, string])[],
@@ -192,13 +219,19 @@ function conventionRefs(
   const haystack = hay.join("\n");
   if (haystack === "") return [];
 
+  // 一次扫描建索引，之后每个候选 O(1) 查表。
+  // 原来是逐个候选在整段正文里 includes + countOf，候选几百个、正文几 MB，
+  // vue 上实测这一段就是 ~2 秒/commit。
+  const idx = mentionIndex(haystack);
+
   const out: string[] = [];
   for (const f of candidates) {
     const base = f.slice(f.lastIndexOf("/") + 1);
     if (base.length < 5) continue;
-    if (!haystack.includes(base)) continue;
+    const total = mentionCount(idx, base);
+    if (total === 0) continue;
     const own = info.get(snap.files.get(f) ?? "")?.text ?? "";
-    if (countOf(haystack, base) > countOf(own, base)) out.push(f);
+    if (total > countOf(own, base)) out.push(f);
   }
   return out;
 }
@@ -312,7 +345,8 @@ function entryPoints(
     const t = declaresText.get(snap.files.get(f) ?? "");
     if (t) hay.push(t);
   }
-  const haystack = hay.join("\n");
+  // 同样的道理：一次扫描建索引，不要对每个代码文件再扫一遍文档。
+  const docIdx = mentionIndex(hay.join("\n"));
 
   for (const f of snap.code) {
     if (TOOL_LOADED.test(f)) {
@@ -343,7 +377,7 @@ function entryPoints(
       continue;
     }
     const base = f.slice(f.lastIndexOf("/") + 1);
-    if (base.length >= 5 && haystack.includes(base)) {
+    if (base.length >= 5 && mentionCount(docIdx, base) > 0) {
       out.set(f, "被文档或配置按文件名点名");
     }
   }
