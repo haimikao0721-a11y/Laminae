@@ -51,6 +51,23 @@ node /path/to/laminae/scripts/run.ts
 
 数仓库的事实只读取 git 对象，不检出，不修改项目已跟踪的文件，也不改项目自己的 `.gitignore`。`test-passes`、`invariant-holds`、`output-unchanged` 会在临时 worktree 里执行 claims.json 里写的命令，测完即删，不改主工作区。生成物会自动登记到目标仓库的 `.git/info/exclude`（仅本地生效），不出现在 `git status` 里；`.laminae/claims.json` 不忽略。
 
+**会执行命令这件事，跑之前先摊开。** 每次运行都会先打印每条命令的原文（不截断）、要跑多少次、以及它来自哪里：
+
+```
+  测试全过
+    命令  npm test && npm run lint
+    次数  watch src/**（只有这些文件变了的 commit 才跑）
+    超时  默认 60 秒
+
+  出处  .laminae/claims.json
+        **这个文件被 git 跟踪**，是随仓库来的，不一定是使用者自己写的
+        最后一次修改：someone <s@example.com>，2026-10-01
+```
+
+因为 `claims.json` 可以提交进仓库，克隆一个仓库再跑一次 laminae，就可能执行别人写好的命令。**这不是沙箱**——沙箱会让人以为「关起来了」，这里要做的是让人看见。
+
+不想跑就用 `--no-commands`：连临时工作区都不开，那几条说法一律记成「测不出来」（不是假），报告顶部也会写明这次没跑命令。
+
 终端默认只打印紧凑摘要，行数不随 commit 数增长；加 `--verbose` 打印完整的逐 commit 时间线。
 
 环境变量（均选填）与报错处理见 [docs/REFERENCE.md](docs/REFERENCE.md)。

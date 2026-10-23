@@ -51,6 +51,23 @@ To use it as a skill, put this repository in the agent's skills directory; `SKIL
 
 Facts that count the repository only read git objects: no checkout, no modification of files the project already tracks, and no change to the project's own `.gitignore`. `test-passes`, `invariant-holds`, and `output-unchanged` execute the commands written in claims.json inside a temporary worktree, which is deleted as soon as measuring finishes, leaving the main working tree untouched. Generated artifacts are automatically registered in the target repository's `.git/info/exclude` (local only), so they do not show up in `git status`; `.laminae/claims.json` is not ignored.
 
+**Because commands get executed, they are laid out before every run.** Each run first prints every command verbatim (never truncated), how many times it will run, and where it came from:
+
+```
+  测试全过
+    命令  npm test && npm run lint
+    次数  watch src/**（只有这些文件变了的 commit 才跑）
+    超时  默认 60 秒
+
+  出处  .laminae/claims.json
+        **这个文件被 git 跟踪**，是随仓库来的，不一定是使用者自己写的
+        最后一次修改：someone <s@example.com>，2026-10-01
+```
+
+Because `claims.json` can be committed into a repository, cloning a repository and running laminae once can execute commands someone else wrote. **This is not a sandbox** — a sandbox makes people believe it is "contained", whereas the point here is to make it visible.
+
+If you do not want them to run, use `--no-commands`: the temporary worktree is never opened, those claims are all recorded as "cannot be measured" (not as false), and the top of the report states that commands were not run this time.
+
 By default the terminal prints only a compact summary, whose line count does not grow with the number of commits; add `--verbose` to print the full per-commit timeline.
 
 For environment variables (all optional) and error handling, see [docs/REFERENCE.md](docs/REFERENCE.en.md).
