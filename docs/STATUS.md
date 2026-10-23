@@ -124,7 +124,7 @@ graph 一步     1102 秒 → 269 秒（4.1 倍）
 
 ### 5. 隔离型事实要工作区
 
-`test-passes`、`invariant-holds`、`output-unchanged` 三类要执行命令，会建临时工作区。分支扫描里直接跳过它们，记成「测不出来」——**不假装查过**。
+`test-passes`、`invariant-holds`、`output-unchanged` 三类要执行命令，会建临时工作区，跑完删掉，不动主目录。**分支扫描里也一样跑** —— watch 的文件没变就不重跑。
 
 ---
 
