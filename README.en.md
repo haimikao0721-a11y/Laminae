@@ -68,6 +68,20 @@ Because `claims.json` can be committed into a repository, cloning a repository a
 
 If you do not want them to run, use `--no-commands`: the temporary worktree is never opened, those claims are all recorded as "cannot be measured" (not as false), and the top of the report states that commands were not run this time.
 
+**There is also a provenance gate.** If `.laminae/claims.json` is tracked by git and the last person to change it is not this machine's git identity, the commands **do not run**:
+
+```
+命令类事实：1 条，没有执行 —— 这份 claims 不是你写的。
+  这些说法会记成「测不出来」，不会记成假 —— 没跑就是没跑，不是不成立。
+
+命令没有执行：最后一次修改它的是 someone <s@example.com>，不是你（me@example.com）。
+  确认这些命令可以信任之后，加 --trust-commands 再跑一次。
+```
+
+When this machine's identity cannot be read, it is treated as not allowed (if it cannot be judged, it is not trusted by default). **Being blocked does not fail the whole run**: facts that count the repository are still measured, and only the command-based claims come out unmeasurable.
+
+When a command times out (60 seconds by default) the **whole process tree is killed**, not just the shell — otherwise a server started by a test survives and holds a port, and the next run of the same claims collides with what the previous one left behind.
+
 By default the terminal prints only a compact summary, whose line count does not grow with the number of commits; add `--verbose` to print the full per-commit timeline.
 
 For environment variables (all optional) and error handling, see [docs/REFERENCE.md](docs/REFERENCE.en.md).
