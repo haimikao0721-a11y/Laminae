@@ -328,6 +328,45 @@ End to end: **1397 seconds → 465 seconds**.
 
 ---
 
+### The hop count reported the last value computed, not the shortest
+
+**Symptom** When a function reaches an empty shell through several paths, the hop count was too large. Most visible on forked call trees.
+
+**Cause** Two mistakes stacked:
+
+```ts
+downHops.set(key, hops);                 // unconditional overwrite: the last path processed wins
+if (visitedCall.has(visit)) continue;    // each call edge is processed only once
+```
+
+The second is the subtler one: an edge may first be reached from far away (distance 3), and only later does a shorter route (distance 1) appear — but the set already blocked it, so it is never recomputed.
+
+**What changed** The code now records the distance each edge was processed at, and reprocesses only when the new distance is genuinely smaller; the reported hop count updates only on a shorter value.
+
+**Lesson** Using a "already visited, skip" set inside a fixpoint loop assumes **the first value computed is the final value**. Iterations that track a minimum or a shortest path do not satisfy that assumption; they must recompute whenever the value improves.
+
+**A stumble while verifying** My verification script used a wrong path, and a `git checkout` reverted the fix — the test went red at once. That actually proved the test catches the old bug. **A test only counts as testing something if it fails when the old code is put back.**
+
+---
+
+### "This version does not do it" in a comment turns into "cannot be measured"
+
+**Symptom** In the branch scan, command-based facts (`test-passes` and friends) were all recorded as "cannot be measured".
+
+**The comment said** "command facts need a worktree, so they are not run here. This is not 'cannot be measured', this version deliberately skips them."
+
+**The trouble is** that sentence does not hold up: **whether a command passes on a branch can be measured**, it just costs a checkout. Recording "not implemented in this version" as "cannot be measured" makes the tool pretend it looked and saw nothing.
+
+**All the pieces existed** — `openWorktree` does temporary checkouts, `nextObservation` caches by watched files. They simply were not connected. Once connected:
+
+```
+功能可用  main=假  分支=真  ← 分支上修好了，没合进来
+```
+
+**Lesson** When an internal comment says "this is not 'cannot be measured', it is deliberately skipped", remember that **the user sees "cannot be measured"**. Those two sentences are indistinguishable in a report, so a comment cannot be used to tell them apart — either do the work, or state "this item was not measured" in the report itself.
+
+---
+
 ## 2. My own operational mistakes
 
 These are not product bugs, but **they are easier to repeat than product bugs**, and each one nearly made me misdiagnose the tool.

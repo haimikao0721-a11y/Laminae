@@ -120,7 +120,7 @@ The four rounds: dropping a backtracking regex (1.04×), processing only changed
 
 ### 5. Command facts need a working tree
 
-`test-passes`, `invariant-holds` and `output-unchanged` execute a command and need a temporary working tree. Branch scanning skips them and records "unmeasurable" — **it does not pretend to have checked**.
+`test-passes`, `invariant-holds` and `output-unchanged` execute a command inside a temporary worktree, which is removed afterwards; the main working directory is never touched. **The branch scan runs them too**, and skips the run when the watched files are unchanged.
 
 ---
 
