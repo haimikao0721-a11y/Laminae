@@ -504,7 +504,9 @@ export class ImportScanner {
       });
       for (const r of info.layer.references) layer.references.push({ ...r, file: f });
       for (const kind of info.layer.clues) layer.clues.push({ kind, file: f });
-      for (const h of info.layer.hollowFns) layer.hollowFns!.push({ file: f, name: h.name, line: h.line, reason: h.reason });
+      // arrow 要一起带过去：下游靠它判断「这条要不要进需要复核的清单」。
+    for (const h of info.layer.hollowFns)
+      layer.hollowFns!.push({ file: f, name: h.name, line: h.line, reason: h.reason, ...(h.arrow ? { arrow: true } : {}) });
       for (const d of info.layer.delegates) layer.delegates!.push({ file: f, ...d });
     }
     layer.declares = mountRoutes(pieces, (from, spec, imported) => resolvePython(from, { spec, names: [imported] }, env)).map((d) => ({
