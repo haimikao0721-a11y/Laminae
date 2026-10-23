@@ -28,14 +28,18 @@ function findFunctions(raw: string): FoundFn[] {
       re.lastIndex = brace + 1;
       continue;
     }
+    // 标出这是不是箭头函数。文件级判定（classifyDepth）仍然需要「整个文件只有一句
+    // 常量箭头」这种信号，所以这里照样给 reason；要不要把它报成「需要复核」是另一回事，
+    // 那一步在下游按 arrow 过滤。见 layers-core 里的说明。
+    const arrow = m[0].includes("=>");
     const reason = bodyReason(text.slice(brace + 1, end));
-    out.push({ name: m[1] ?? m[2] ?? null, reason, start: m.index, end: end + 1 });
+    out.push({ name: m[1] ?? m[2] ?? null, reason, arrow, start: m.index, end: end + 1 });
     re.lastIndex = end + 1;
   }
   // 没有花括号的箭头函数：const f = () => null
   const expr = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*([^;{\n]+)/g;
   while ((m = expr.exec(text))) {
-    out.push({ name: m[1] ?? null, reason: TRIVIAL_EXPR.test(m[2]!.trim()) ? "return-const" : null, start: m.index, end: m.index + m[0].length });
+    out.push({ name: m[1] ?? null, reason: TRIVIAL_EXPR.test(m[2]!.trim()) ? "return-const" : null, arrow: true, start: m.index, end: m.index + m[0].length });
   }
   // 只再追一跳：函数体如果只是 return 另一个空函数，自己也算空的。不跨文件
   const hollowNames = new Set(out.filter((f) => f.reason && f.name).map((f) => f.name!));
