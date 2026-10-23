@@ -344,7 +344,11 @@ export interface EntryPoint {
 }
 
 /** 演示、工具、文档这类目录下的文件，用途是被人执行或被工具加载，不是被 import */
-export const ENTRY_DIR = /^(?:examples?|samples?|demos?|scripts?|bin|tools?|hack|benchmarks?|docs?|contrib|docs-src)\//;
+export const ENTRY_DIR =
+  /^(?:examples?|samples?|demos?|docs?|contrib|docs-src|scripts?|bin|tools?|hack|benchmarks?)\//;
+/** 这些目录出现在任何层级都算「示例」，不只根目录 —— Rust 的 crates/x/examples/ 是惯例 */
+export const ENTRY_DIR_ANY =
+  /(?:^|\/)(?:examples?|samples?|demos?|benchmarks?)\//;
 
 /**
  * 被工具**按文件名**加载的东西。它们从不被应用代码 import，但每一个都是活的。
@@ -441,7 +445,7 @@ function entryPoints(
       out.set(f, "在基准测试目录下，由测试工具按后缀收集");
       continue;
     }
-    if (ENTRY_DIR.test(f)) {
+    if (ENTRY_DIR.test(f) || ENTRY_DIR_ANY.test(f)) {
       out.set(f, `在 ${f.split("/")[0]}/ 下：演示、工具或文档目录，用途是被执行或被加载`);
       continue;
     }
