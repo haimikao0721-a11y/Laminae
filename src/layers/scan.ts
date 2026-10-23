@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { REPO } from "../core/config.ts";
 import type { CommitGraph } from "./graph-core.ts";
 import { TreeWalker } from "./treewalk.ts";
-import { indexPackages, isCodeFile, isTestFile, parseBareSpecs, parseFileImports, resolveBareSpecs, resolvePython, resolveRaw, sfcScript } from "./imports.ts";
+import { astroFrontmatter, indexPackages, isCodeFile, isTestFile, parseBareSpecs, parseFileImports, resolveBareSpecs, resolvePython, resolveRaw, sfcScript } from "./imports.ts";
 import { isUnsupportedCode } from "./lang.ts";
 import type { RawImport, ResolveEnv } from "./imports.ts";
 import { EMPTY_COMMIT_LAYER, mountRoutes, scanFileLayer } from "./layers-core.ts";
@@ -155,30 +155,80 @@ const BIG_EXT = /\.(min\.js|map|lock)$/i;
 /**
  * 一个文件贡献了哪些文件名计数。增量维护用的最小单位。
  */
-function mentionsOf(text: string): Map<string, number> {
-  const out = new Map<string, number>();
+function mentionsOf(text: string): { names: Map<string, number>; stems: Map<string, number>; shapes: Set<string> } {
+  const names = new Map<string, number>();
+  const stems = new Map<string, number>();
+  const shapes = new Set<string>();
   for (const piece of text.split(/[^A-Za-z0-9_@./-]+/)) {
     let token = piece;
     while (token.length > 0 && ".-/".includes(token[token.length - 1]!)) token = token.slice(0, -1);
     while (token.length > 0 && ".-/@".includes(token[0]!)) token = token.slice(1);
     if (token.length < 5) continue;
-    out.set(token, (out.get(token) ?? 0) + 1);
-    const base = token.slice(token.lastIndexOf("/") + 1);
-    if (base !== token) out.set(base, (out.get(base) ?? 0) + 1);
+    if (token.includes(".")) {
+      names.set(token, (names.get(token) ?? 0) + 1);
+      const base = token.slice(token.lastIndexOf("/") + 1);
+      if (base !== token) names.set(base, (names.get(base) ?? 0) + 1);
+      continue;
+    }
+    // 没有扩展名、但带路径分隔符的，是「路径形态的字符串」：
+    //   `${location.origin}/src/vue-dev-proxy`
+    // 这种引用是 dev server 按路径加载，引用图上没有边。记下它的文件名部分，
+    // 让同名文件（vue-dev-proxy.ts）不至于被判成没人用。
+    const slash = token.lastIndexOf("/");
+    if (slash < 0) continue;
+    const stem = token.slice(slash + 1);
+    if (stem.length >= 5) stems.set(stem, (stems.get(stem) ?? 0) + 1);
   }
-  return out;
+  // 文件名是拼出来的：
+  //   path.join(skillRoot, 'renderers', type, `render-${type}.mjs`)
+  // 这种加载方式在引用图上不会留下边，但文件名确实被用到了。
+  // 只认「模板字符串里含插值、并且以扩展名结尾」的那一种，把插值当通配。
+  for (const m of text.matchAll(/`([^`\n]{1,120})`/g)) {
+    const body = m[1]!;
+    if (!body.includes("${")) continue;
+    const cut = body.lastIndexOf("/");
+    const name = cut < 0 ? body : body.slice(cut + 1);
+    if (!/\.[A-Za-z0-9]{1,8}$/.test(name)) continue;
+    const shape = name.replace(/\${[^}]*}/g, "\u0000");
+    if (shape.length < 4) continue;
+    shapes.add(shape);
+  }
+  return { names, stems, shapes };
+}
+
+/** 文件名是不是符合「拼出来」的形状：\u0000 是通配 */
+function matchesShape(shape: string, base: string): boolean {
+  const parts = shape.split("\u0000");
+  if (parts.length === 1) return false;
+  let at = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]!;
+    if (part === "") continue;
+    const found = base.indexOf(part, at);
+    if (found < 0) return false;
+    if (i === 0 && found !== 0) return false;
+    at = found + part.length;
+  }
+  const tail = parts[parts.length - 1]!;
+  return tail === "" || base.endsWith(tail);
 }
 
 /** 跨 commit 维护的文件名计数表。只处理变动的文件，不重扫全仓。 */
 class MentionTable {
-  private total = new Map<string, number>();
-  private byFile = new Map<string, { oid: string; counts: Map<string, number> }>();
+  private names = new Map<string, number>();
+  private stems = new Map<string, number>();
+  /** 拼出来的文件名形状，跨文件去重后按持有者计数 */
+  private shapes = new Map<string, number>();
+  private byFile = new Map<string, { oid: string; counts: Map<string, number>; stems: Map<string, number>; shapes: Set<string> }>();
 
   /** 把这一轮的 (文件 → 正文, blob 号) 同步进来，只动变了的 */
   sync(texts: ReadonlyMap<string, string>, oids: ReadonlyMap<string, string>): void {
     for (const f of [...this.byFile.keys()]) {
       if (!texts.has(f)) {
-        for (const [tok, n] of this.byFile.get(f)!.counts) this.add(tok, -n);
+        const prev = this.byFile.get(f)!;
+        for (const [tok, n] of prev.counts) this.bump(this.names, tok, -n);
+        for (const [tok, n] of prev.stems) this.bump(this.stems, tok, -n);
+        for (const s of prev.shapes) this.bump(this.shapes, s, -1);
         this.byFile.delete(f);
       }
     }
@@ -186,22 +236,39 @@ class MentionTable {
       const oid = oids.get(f) ?? "";
       const prev = this.byFile.get(f);
       if (prev && prev.oid === oid) continue;
-      if (prev) for (const [tok, n] of prev.counts) this.add(tok, -n);
-      const counts = mentionsOf(text);
-      for (const [tok, n] of counts) this.add(tok, n);
-      this.byFile.set(f, { oid, counts });
+      if (prev) {
+        for (const [tok, n] of prev.counts) this.bump(this.names, tok, -n);
+        for (const [tok, n] of prev.stems) this.bump(this.stems, tok, -n);
+        for (const s of prev.shapes) this.bump(this.shapes, s, -1);
+      }
+      const fresh = mentionsOf(text);
+      for (const [tok, n] of fresh.names) this.bump(this.names, tok, n);
+      for (const [tok, n] of fresh.stems) this.bump(this.stems, tok, n);
+      for (const s of fresh.shapes) this.bump(this.shapes, s, 1);
+      this.byFile.set(f, { oid, counts: fresh.names, stems: fresh.stems, shapes: fresh.shapes });
     }
   }
 
-  private add(tok: string, n: number): void {
-    const next = (this.total.get(tok) ?? 0) + n;
-    if (next === 0) this.total.delete(tok);
-    else this.total.set(tok, next);
+  private bump(m: Map<string, number>, tok: string, n: number): void {
+    const next = (m.get(tok) ?? 0) + n;
+    if (next === 0) m.delete(tok);
+    else m.set(tok, next);
   }
 
-  /** 这个名字在整段正文里出现几次 */
+  /** 这个文件名（带扩展名）在整段正文里出现几次 */
   all(base: string): number {
-    return this.total.get(base) ?? 0;
+    return this.names.get(base) ?? 0;
+  }
+
+  /** 去掉扩展名之后的名字，被当作路径片段出现过几次 */
+  stemAll(stem: string): number {
+    return this.stems.get(stem) ?? 0;
+  }
+
+  /** 有没有哪个文件名是拼出来的，而且拼出来的形状和它吻合 */
+  shapeAll(base: string): boolean {
+    for (const s of this.shapes.keys()) if (matchesShape(s, base)) return true;
+    return false;
   }
 
   /** 这个名字在它自己文件里出现几次 */
@@ -239,9 +306,17 @@ function conventionRefs(
   for (const f of candidates) {
     const base = f.slice(f.lastIndexOf("/") + 1);
     if (base.length < 5) continue;
-    const total = mentions.all(base);
-    if (total === 0) continue;
-    if (total > mentions.own(f, base)) out.push(f);
+    // 两条证据都算：完整文件名出现，或者「去掉扩展名的名字」被当成路径片段用过
+    // （`${location.origin}/src/vue-dev-proxy` 这种）。后者是 dev server 按路径加载，
+    // 引用图上永远不会有边。代价和这一档其他规则一样：只能证明有人提过这个名字。
+    const stem = base.replace(/\.[^.]+$/, "");
+    const total = mentions.all(base) + (stem !== base ? mentions.stemAll(stem) : 0);
+    // 第三种证据：文件名是拼出来的（`render-${type}.mjs`），形状对得上就算。
+    // 这一种的代价最大 —— 只要仓库里有一处 `render-${x}.mjs`，
+    // 所有 render-*.mjs 都会被当成「有人在用」。宁可漏掉真的孤立。
+    const shaped = total === 0 && mentions.shapeAll(base);
+    if (total === 0 && !shaped) continue;
+    if (shaped || total > mentions.own(f, base)) out.push(f);
   }
   return out;
 }
@@ -465,7 +540,7 @@ export class ImportScanner {
       const text = texts.get(o) ?? "";
       // 单文件组件只解析 <script> 块：模板是 HTML，当 JS 解析会把属性当成代码。
       // 正文本身仍然保留原文 —— 模板里的组件标签也算「提到了这个文件」。
-      const from = /\.(?:vue|svelte)$/i.test(file) ? sfcScript(text) : text;
+      const from = /\.(?:vue|svelte)$/i.test(file) ? sfcScript(text) : /\.astro$/i.test(file) ? astroFrontmatter(text) : text;
       this.infoByBlob.set(o, { raw: parseFileImports(file, from), bare: parseBareSpecs(file, from), layer: scanFileLayer(from), text });
     }
     for (const o of needPkg) this.pkgByBlob.set(o, texts.get(o) ?? null);
