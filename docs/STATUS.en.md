@@ -2,7 +2,7 @@
 
 [中文](STATUS.md) | [English](STATUS.en.md)
 
-As of `9d1e8bd`. This document answers three things: **what it can do now**, **what it has been validated on**, and **how far the tool can express itself**.
+As of `50dee4f`. This document answers three things: **what it can do now**, **what it has been validated on**, and **how far the tool can express itself**.
 
 ---
 
@@ -56,6 +56,31 @@ There are also 6 fixtures built for specific behaviours (call chains, branches, 
 | Merge "the fix was lost" | A fixture whose merge dropped a file reports correctly |
 | Reproducible artifacts | The same payload rendered twice is byte-identical; a single edited character is caught |
 | Multiple languages | JS/TS (including JSX and SFC), Python and Rust each have a syntax module; Rust was validated on 703 files in ElyOffice |
+| Evidence grades | every bucket must declare one — adding a bucket without it fails to compile; wording is pinned by a test |
+
+---
+
+## 3b. Evidence grades: what each block can be used for
+
+The buckets in the report are not equally reliable. On one page, "a contract does not line up" and "an orphan module" differ by an order of magnitude, so every block carries a grade. **A grade is not severity; it is "what this conclusion can be used for".**
+
+| Grade | Name | Can | Cannot |
+|---|---|---|---|
+| **A** | stated | the document or the repository itself says so; usable as a verification result | it only checks what someone wrote, not whether they should have written it |
+| **B** | mentioned | the name appears somewhere in the repository, so someone is working with it | a name mentioned is not the file itself; namesakes and examples count too |
+| **C** | structural fact only | states a neutral fact: no other code references it | **it does not follow that the file is unused**. Entry points, examples and path-loaded files have no incoming edge by nature |
+| **D** | inferred from shape | worth a human glance: an empty body or a constant return is worth reviewing | **it is not a defect**. Writing it this way is everywhere, and this tier has been wrong by whole categories |
+
+Where each bucket falls:
+
+| Grade | Buckets |
+|---|---|
+| A stated | entry points (manifests, directory roles), contracts (route declarations and calls) |
+| B mentioned | loaded by convention, injection clues |
+| C structural | orphan modules |
+| D heuristic | one layer down, needs review, has real code but not proven |
+
+**This is enforced by the type system**: the keys of `BucketEvidence` are the full set of bucket names, so adding a bucket without a grade fails `tsc`. A test also pins the wording — grade D's "can" may not contain "confirmed", "proves", "definitely" or "certainly", and grade C's "can" may not contain "unused" or "can be deleted".
 
 ---
 

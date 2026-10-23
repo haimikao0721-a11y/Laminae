@@ -8,6 +8,32 @@ Two kinds: **defects in the tool** (it accuses wrongly, misses things, or crashe
 
 ---
 
+### Evidence with no grades says everything is equally reliable
+
+**Symptom** The buckets in the report differ in reliability by an order of magnitude — "a contract does not line up" and "an orphan module" are not remotely the same kind of claim — yet they sit side by side on the page, and the UI can only paste one sentence over the whole block.
+
+**Cause** "What is this conclusion based on" lived only in the **copy**, never in the **structure**.
+
+The sentence "these are signs, not confirmed business errors" was correct, but it was printed above a block that mixed evidence of very different strength. **Copy cannot compensate for a structural defect.**
+
+**What changed** Every bucket now declares an evidence grade, in four levels:
+
+| Grade | Name | Can | Cannot |
+|---|---|---|---|
+| A | stated | the document or the repository itself says so; usable as a verification result | it only checks what someone wrote |
+| B | mentioned | the name appears somewhere, so someone is working with it | a name mentioned is not the file itself |
+| C | structural fact only | states the neutral fact "no incoming edge" | **it does not follow that the file is unused** |
+| D | inferred from shape | ask a human to look at those shapes | **it is not a defect** |
+
+**Two enforcements**, neither left to discipline:
+
+1. The keys of `BucketEvidence` are the full set of bucket names. Adding a bucket without a grade makes `tsc` report `Property 'evidence' is missing`.
+2. A test pins the wording: grade D's "can" may not contain "confirmed", "proves", "definitely" or "certainly", and grade C's may not contain "unused" or "can be deleted".
+
+**Why pin the wording too**: this whole effort went wrong by whole categories precisely because "I found no evidence" and "there is no evidence" were treated as the same sentence. Slack in the language becomes slack in the judgement.
+
+---
+
 ## 1. Defects in the tool
 
 ### Isolated modules counted entry scripts as defects (click, 15 of 15 wrong)
