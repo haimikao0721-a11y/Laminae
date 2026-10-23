@@ -306,6 +306,49 @@
 
 ---
 
+### 「没人用」和「我看不见」是两件事
+
+**症状** archify 上报两个孤立文件，我在文档里写过「剩下 3 条是真的没人用」。
+
+**打脸** 那两个文件被 .astro 组件 import：
+
+  website/src/pages/community.astro:  import { packages } from '../data/community';
+  website/src/layouts/SiteLayout.astro:  import { productChannel } from '../data/product-facts';
+
+.astro 不在代码文件范围内，那些边根本不存在。**我说「真的没人用」的时候，
+手上只有「工具看不见」这一个事实。**
+
+**教训** 「工具没找到证据」和「证据不存在」是两句话，只有前一句是我能说的。
+文档里凡是写「确认没人用」的地方，都要改成「工具没找到引用」。
+
+**这一类的三个形状**（都是引用图上没有边、但文件确实在用）：
+
+1. **单文件组件** .vue / .svelte / .astro —— 引用写在 <script> 块或 --- 围栏里
+2. **路径形态的字符串** `${location.origin}/src/vue-dev-proxy` —— dev server 按路径加载
+3. **拼出来的文件名** `render-${type}.mjs` —— 把插值当通配
+
+**代价** 这三种都只能证明「有人提过这个名字」，不能证明「就是这个文件被用了」。
+第三种最松：仓库里只要有一处 `render-${x}.mjs`，所有 render-*.mjs 都不再报孤立。
+这一档从一开始的取向就是**宁可漏掉真的孤立，也不要把在用的文件报成没人用**。
+
+---
+
+### 二级目录里的 examples 不算 examples
+
+**症状** ElyOffice 报 `crates/ely-ui/examples/shell/probe/support.rs` 孤立。
+
+**根因** `ENTRY_DIR` 的正则锚在开头（`^(?:examples?|...)\/`），只认根目录的 examples。
+可是 `crates/x/examples/` 正是 Cargo 的惯例目录，和根目录的 examples 完全同义。
+
+**改法** 另加一条 `ENTRY_DIR_ANY`，允许示例类目录出现在任意层级。
+只放开示例、样例、演示、基准这四类 —— 它们语义没有歧义；
+`scripts/`、`bin/`、`docs/` 仍然只认根目录，因为二级目录里叫这些名字的常常是构建产物或依赖自带的。
+
+**顺带纠正一个记错的数** 我以为 ElyOffice 当年是 0 条孤立，翻了历史运行记录才发现是 9 条。
+9 → 7 → 6，一路上都是改善，不是回归。**核对历史数据比凭记忆下结论可靠。**
+
+---
+
 ## 二、我自己的操作失误
 
 这些不是产品 bug，但**比产品 bug 更容易重复踩**，而且每一次都让我差点误判工具。

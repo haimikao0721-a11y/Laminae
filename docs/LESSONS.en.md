@@ -293,6 +293,41 @@ End to end: **1397 seconds → 465 seconds**.
 
 ---
 
+### "Nothing uses it" and "I cannot see it" are two different things
+
+**Symptom** archify reported two orphan files, and I had written in the docs that "the remaining 3 really are unused".
+
+**Wrong** Both files are imported by .astro components:
+
+  website/src/pages/community.astro:  import { packages } from '../data/community';
+  website/src/layouts/SiteLayout.astro:  import { productChannel } from '../data/product-facts';
+
+.astro was not in the code file set, so those edges did not exist. **When I said "really unused", the only fact I had was that the tool could not see them.**
+
+**Lesson** "The tool found no evidence" and "there is no evidence" are two different sentences, and only the first is mine to say. Anywhere the docs claimed "confirmed unused", they should say "the tool found no reference".
+
+**Three shapes of this** (no edge on the reference graph, yet the file is genuinely in use):
+
+1. **Single-file components** .vue / .svelte / .astro — imports live in a <script> block or a --- fence
+2. **Path-shaped strings** `${location.origin}/src/vue-dev-proxy` — loaded by the dev server by path
+3. **Composed file names** `render-${type}.mjs` — the interpolation is treated as a wildcard
+
+**What it costs** All three can only prove "someone mentioned this name", not "this file is being used". The third is the loosest: one `render-${x}.mjs` anywhere means no render-*.mjs will ever be reported as an orphan again. This whole tier has always leaned towards **missing a real orphan rather than reporting a file in use as unused**.
+
+---
+
+### examples in a nested directory did not count as examples
+
+**Symptom** ElyOffice reported `crates/ely-ui/examples/shell/probe/support.rs` as an orphan.
+
+**Cause** The `ENTRY_DIR` regex was anchored at the start (`^(?:examples?|...)\/`), so only a root-level examples directory counted. But `crates/x/examples/` is the Cargo convention and means exactly the same thing.
+
+**What changed** A second regex, `ENTRY_DIR_ANY`, allows example directories at any depth. Only examples, samples, demos and benchmarks are opened up — their meaning is unambiguous. `scripts/`, `bin/` and `docs/` still only count at the root, because a nested directory with those names is often a build artefact or vendored code.
+
+**One number corrected** I believed ElyOffice had 0 orphans back then. The stored run records show 9. It went 9 → 7 → 6, an improvement at every step, not a regression. **Checking recorded data beats trusting memory.**
+
+---
+
 ## 2. My own operational mistakes
 
 These are not product bugs, but **they are easier to repeat than product bugs**, and each one nearly made me misdiagnose the tool.

@@ -28,7 +28,7 @@ All real repositories, none constructed.
 | Repository | Size | Languages | Result |
 |---|---|---|---|
 | **archify** | 889 files / 1 commit | JS, MJS | isolated 64 → 4 (later 3); a clean repository |
-| **ElyOffice** | 1971 files / 1 commit | Rust, TS, Python | unsupported 703 → 0; graph 160 → 185 edges |
+| **ElyOffice** | 1971 files / 1 commit | Rust, TS, Python | unsupported 703 → 0; graph 160 → 185 edges; orphans 9 → 6 (all six under site/video/, the recording scripts, which nothing imports) |
 | **pallets/click** | 178 files / 3379 commits (1384 on the mainline) / 1207 merges | Python | 3 of 3 claims judged correctly; isolated 15 → 0; one layer down 100 → 0 current |
 | **vuejs/core** | 703 files / 7234 commits (6513 on the mainline) / 35 merges | TS | isolated 170 → 4; all 4 claims true at HEAD; `verify` passes |
 
