@@ -130,15 +130,6 @@ function snapshot(sha: string): {
 const DECLARES_EXT = /\.(json|html?|astro|vue|svelte|ya?ml|toml|md|mdx|txt|cfg|ini|mk|sh|ps1|bat|cmd)$/i;
 const BIG_EXT = /\.(min\.js|map|lock)$/i;
 
-function countOf(hay: string, needle: string): number {
-  let n = 0;
-  let i = hay.indexOf(needle);
-  while (i >= 0) {
-    n++;
-    i = hay.indexOf(needle, i + needle.length);
-  }
-  return n;
-}
 
 /**
  * 「按约定加载」的文件：没有任何 import 边，但文件名在别的文件正文里作为字面量出现过。
@@ -165,39 +156,70 @@ function countOf(hay: string, needle: string): number {
  *
  * 现在改成一次扫描建索引，之后每个候选 O(1) 查表。
  */
-function mentionCounts(text: string, wanted: ReadonlySet<string>): Map<string, number> {
-  const hits = new Map<string, number>();
-  if (wanted.size === 0) return hits;
-
-  // 按「不可能是文件名一部分」的字符切开，只检查切出来的碎片是不是我们关心的名字。
-  //
-  // 这一步被 profile 推着改了两轮：
-  //   第一版是「对每个候选，在整段正文里 includes」—— O(候选 × 全文)，太慢。
-  //   第二版换成回溯正则建全量索引，profile 显示正则占 43.5%，更糟。
-  //   第三版用 String.split 线性分词，但把三万个 token 全塞进 Map，mentionIndex 占 26.2%。
-  // 现在这一版只对**候选**计数，Map 里只留命中项 —— 通常不到一百个。
+/**
+ * 一个文件贡献了哪些文件名计数。增量维护用的最小单位。
+ */
+function mentionsOf(text: string): Map<string, number> {
+  const out = new Map<string, number>();
   for (const piece of text.split(/[^A-Za-z0-9_@./-]+/)) {
     let token = piece;
-    // 去掉首尾的句号、斜杠、连字符：正文里常写成「见 renderer.ts.」这种
     while (token.length > 0 && ".-/".includes(token[token.length - 1]!)) token = token.slice(0, -1);
     while (token.length > 0 && ".-/@".includes(token[0]!)) token = token.slice(1);
     if (token.length < 5) continue;
-    if (wanted.has(token)) {
-      hits.set(token, (hits.get(token) ?? 0) + 1);
-      continue;
-    }
+    out.set(token, (out.get(token) ?? 0) + 1);
     const base = token.slice(token.lastIndexOf("/") + 1);
-    if (base !== token && wanted.has(base)) hits.set(base, (hits.get(base) ?? 0) + 1);
+    if (base !== token) out.set(base, (out.get(base) ?? 0) + 1);
   }
-  return hits;
+  return out;
 }
+
+/** 跨 commit 维护的文件名计数表。只处理变动的文件，不重扫全仓。 */
+class MentionTable {
+  private total = new Map<string, number>();
+  private byFile = new Map<string, { oid: string; counts: Map<string, number> }>();
+
+  /** 把这一轮的 (文件 → 正文, blob 号) 同步进来，只动变了的 */
+  sync(texts: ReadonlyMap<string, string>, oids: ReadonlyMap<string, string>): void {
+    for (const f of [...this.byFile.keys()]) {
+      if (!texts.has(f)) {
+        for (const [tok, n] of this.byFile.get(f)!.counts) this.add(tok, -n);
+        this.byFile.delete(f);
+      }
+    }
+    for (const [f, text] of texts) {
+      const oid = oids.get(f) ?? "";
+      const prev = this.byFile.get(f);
+      if (prev && prev.oid === oid) continue;
+      if (prev) for (const [tok, n] of prev.counts) this.add(tok, -n);
+      const counts = mentionsOf(text);
+      for (const [tok, n] of counts) this.add(tok, n);
+      this.byFile.set(f, { oid, counts });
+    }
+  }
+
+  private add(tok: string, n: number): void {
+    const next = (this.total.get(tok) ?? 0) + n;
+    if (next === 0) this.total.delete(tok);
+    else this.total.set(tok, next);
+  }
+
+  /** 这个名字在整段正文里出现几次 */
+  all(base: string): number {
+    return this.total.get(base) ?? 0;
+  }
+
+  /** 这个名字在它自己文件里出现几次 */
+  own(file: string, base: string): number {
+    return this.byFile.get(file)?.counts.get(base) ?? 0;
+  }
+}
+
 
 
 function conventionRefs(
   snap: { files: ReadonlyMap<string, string>; code: readonly string[]; declares: readonly string[] },
   edges: readonly (readonly [string, string])[],
-  info: ReadonlyMap<string, BlobInfo>,
-  declaresText: ReadonlyMap<string, string>,
+  mentions: MentionTable,
 ): string[] {
   const incomingBy = new Map<string, string[]>();
   for (const [s, t] of edges) {
@@ -216,37 +238,14 @@ function conventionRefs(
   });
   if (candidates.length === 0) return [];
 
-  // 正文收全部代码文件，测试也算：一个文件只被测试按名字用到，也不是「没人用」。
-  // 代价是「只在测试里被提到」和「在配置里被声明」分不开 —— 两者都算按约定加载。
-  // 宁可漏掉一个真的孤立，也不要把在用的文件报成没人用。
-  const hay: string[] = [];
-  for (const f of snap.code) {
-    const t = info.get(snap.files.get(f) ?? "")?.text;
-    if (t) hay.push(t);
-  }
-  for (const f of snap.declares) {
-    const t = declaresText.get(snap.files.get(f) ?? "");
-    if (t) hay.push(t);
-  }
-  const haystack = hay.join("\n");
-  if (haystack === "") return [];
-
-  // 先收集候选名，再单趟扫描计数。见 mentionCounts 的说明。
-  const wanted = new Set<string>();
-  for (const f of candidates) {
-    const base = f.slice(f.lastIndexOf("/") + 1);
-    if (base.length >= 5) wanted.add(base);
-  }
-  const hits = mentionCounts(haystack, wanted);
-
+  // 计数表是跨 commit 增量维护的，这里只查，不扫正文。
   const out: string[] = [];
   for (const f of candidates) {
     const base = f.slice(f.lastIndexOf("/") + 1);
     if (base.length < 5) continue;
-    const total = hits.get(base) ?? 0;
+    const total = mentions.all(base);
     if (total === 0) continue;
-    const own = info.get(snap.files.get(f) ?? "")?.text ?? "";
-    if (total > countOf(own, base)) out.push(f);
+    if (total > mentions.own(f, base)) out.push(f);
   }
   return out;
 }
@@ -331,6 +330,7 @@ function entryPoints(
   snap: { files: ReadonlyMap<string, string>; code: readonly string[]; declares: readonly string[]; pkgs: readonly string[] },
   info: ReadonlyMap<string, BlobInfo>,
   declaresText: ReadonlyMap<string, string>,
+  docMentions: MentionTable,
 ): Map<string, string> {
   const out = new Map<string, string>();
 
@@ -360,13 +360,6 @@ function entryPoints(
     const t = declaresText.get(snap.files.get(f) ?? "");
     if (t) hay.push(t);
   }
-  // 同样的道理：先收集关心的名字，再单趟扫描。
-  const docWanted = new Set<string>();
-  for (const f of snap.code) {
-    const b = f.slice(f.lastIndexOf("/") + 1);
-    if (b.length >= 5) docWanted.add(b);
-  }
-  const docHits = mentionCounts(hay.join("\n"), docWanted);
 
   for (const f of snap.code) {
     if (TOOL_LOADED.test(f)) {
@@ -397,7 +390,7 @@ function entryPoints(
       continue;
     }
     const base = f.slice(f.lastIndexOf("/") + 1);
-    if (base.length >= 5 && (docHits.get(base) ?? 0) > 0) {
+    if (base.length >= 5 && docMentions.all(base) > 0) {
       out.set(f, "被文档或配置按文件名点名");
     }
   }
@@ -430,6 +423,10 @@ export class ImportScanner {
   private reader = new BlobReader();
   /** blob 号 → 它里面的引用（只取决于正文，跨 commit 复用） */
   private infoByBlob = new Map<string, BlobInfo>();
+  /** 代码 + 声明的合并计数表（按约定加载用） */
+  private mentions = new MentionTable();
+  /** 只算声明（文档、配置）的计数表（入口点用） */
+  private docMentions = new MentionTable();
   /** package.json 的 blob 号 → 正文 */
   private pkgByBlob = new Map<string, string | null>();
   /** 配置、清单、页面与文档的 blob 号 → 正文。用来查「按名字提到」，不是 import 边 */
@@ -518,9 +515,44 @@ export class ImportScanner {
       ...(d.via ? { via: d.via } : {}),
       ...(d.imported ? { imported: d.imported } : {}),
     }));
-    layer.convention = conventionRefs(snap, edges, this.infoByBlob, this.declaresText);
+    // 两张表都增量维护：只处理这一轮变了的文件，不重扫全仓。
+    // 这是 profile 推出来的：每个 commit 重扫 5.6 MB 正文占了三分之一的时间，
+    // 而相邻 commit 之间 99% 的正文是一样的。
+    const combined = new Map<string, string>();
+    const combinedOid = new Map<string, string>();
+    for (const f of snap.code) {
+      const oid = snap.files.get(f);
+      const text = oid === undefined ? undefined : this.infoByBlob.get(oid)?.text;
+      if (text !== undefined) {
+        combined.set(f, text);
+        combinedOid.set(f, oid!);
+      }
+    }
+    for (const f of snap.declares) {
+      const oid = snap.files.get(f);
+      const text = oid === undefined ? undefined : this.declaresText.get(oid);
+      if (text !== undefined) {
+        combined.set(f, text);
+        combinedOid.set(f, oid!);
+      }
+    }
+    this.mentions.sync(combined, combinedOid);
+
+    const docsOnly = new Map<string, string>();
+    const docsOnlyOid = new Map<string, string>();
+    for (const f of snap.declares) {
+      const oid = snap.files.get(f);
+      const text = oid === undefined ? undefined : this.declaresText.get(oid);
+      if (text !== undefined) {
+        docsOnly.set(f, text);
+        docsOnlyOid.set(f, oid!);
+      }
+    }
+    this.docMentions.sync(docsOnly, docsOnlyOid);
+
+    layer.convention = conventionRefs(snap, edges, this.mentions);
     // 入口点：有明写证据的，不算孤立。理由一并带上，报告里要能被人核对
-    layer.entry = [...entryPoints(snap, this.infoByBlob, this.declaresText)].map(([file, why]) => ({ file, why }));
+    layer.entry = [...entryPoints(snap, this.infoByBlob, this.declaresText, this.docMentions)].map(([file, why]) => ({ file, why }));
     return { graph: { files: snap.code, edges }, unresolved, layer };
   }
 
