@@ -83,9 +83,25 @@ node <laminae>/scripts/run.ts                      # a timestamp like 20261020T0
 node <laminae>/scripts/run.ts --run before-refactor # use a readable name
 ```
 
-Only `payload.json` and `laminae.html` are kept. Intermediate data is a single shared copy, overwritten every time, so that a repository with hundreds of commits does not eat the disk. The cost is that drafts such as `facts.json` are no longer there: **after changing the decision rules, you cannot re-run the analysis on the old data**, only re-run the whole thing.
+Only `payload.json` and `laminae.html` are kept. Intermediate data is a single shared copy, overwritten every time, so that a repository with hundreds of commits does not eat the disk.
 
-**Keeping a copy is not the same as having a comparison.** What is kept is a snapshot of each invocation, and what it can answer is: what the report said on a given day, from which claim onward the same repository's conclusions differ after the decision rules changed, and how much the repository itself moved. **"How long has this sentence been wrong" is answered by the per-commit false runs inside one run (`hiatus`); two reports are not needed.** The command that lines two `payload.json` files up and lists "which claims were false last time, and whether they still are" has not been written yet; for now you can only diff the two files yourself.
+**After changing a parser or a rule, there is no need to re-run everything.** The six steps are separate, and you can run just some of them:
+
+```bash
+node <laminae>/scripts/run.ts --from 2                # start at step 2 (skips the expensive per-commit measurement)
+node <laminae>/scripts/run.ts --from analyze --to 5   # a fragment of the name works too
+node <laminae>/scripts/run.ts --from 5                # only the build-time pass and rendering
+```
+
+Measured on vue (6513 commits): a full run takes 426 seconds, re-running just the judgement takes 1 second, and the build-time pass plus rendering takes 2 seconds, with an identical result. When the intermediate data a skipped step depends on is missing, it stops and tells you which step to run first — it will not let the later steps read empty files and produce an empty report that looks normal.
+
+**Two reports can be compared.** `scripts/diff.ts` compares the claim state sequences, the added and removed entries in the layer buckets, the graph's nodes and edges, and the tally:
+
+```bash
+node <laminae>/scripts/diff.ts <older run> <newer run>
+```
+
+**"How long has this sentence been wrong" is answered by the per-commit false runs inside one run (`hiatus`); two reports are not needed.** `diff` answers a different question: after changing a rule, which conclusion changed first.
 
 Running a second time with the same name overwrites that run, and says so in advance. A name may contain only letters, digits, dots, underscores, and hyphens, and no path separators: both `claims.json` and the command line can influence it, and without that guard artifacts could be written outside the repository.
 
