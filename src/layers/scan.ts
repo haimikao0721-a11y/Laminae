@@ -15,7 +15,7 @@ import type { Readable, Writable } from "node:stream";
 import { createHash } from "node:crypto";
 import { REPO } from "../core/config.ts";
 import type { CommitGraph } from "./graph-core.ts";
-import { git } from "../core/gitutil.ts";
+import { TreeWalker } from "./treewalk.ts";
 import { indexPackages, isCodeFile, isTestFile, parseBareSpecs, parseFileImports, resolveBareSpecs, resolvePython, resolveRaw } from "./imports.ts";
 import { isUnsupportedCode } from "./lang.ts";
 import type { RawImport, ResolveEnv } from "./imports.ts";
@@ -81,7 +81,7 @@ export class BlobReader {
 }
 
 /** 一个 commit 上：文件 → blob 号，以及判断「引用有没有可能变过」的签名 */
-function snapshot(sha: string): {
+function snapshot(files_: ReadonlyMap<string, string>): {
   files: Map<string, string>;
   code: string[];
   unsupported: string[];
@@ -89,19 +89,15 @@ function snapshot(sha: string): {
   declares: string[];
   sig: string;
 } {
-  const out = git(["ls-tree", "-r", sha]) ?? "";
+  // 文件表由 TreeWalker 滚动重建，一次 git 调用覆盖整条主线。
+  // 原来每个 commit 一次 ls-tree，Windows 上进程启动就要 29 ms。
   const files = new Map<string, string>();
   const code: string[] = [];
   const unsupported: string[] = [];
   const pkgs: string[] = [];
   const declares: string[] = [];
   const h = createHash("sha1");
-  for (const line of out.split("\n")) {
-    if (!line) continue;
-    const tab = line.indexOf("\t");
-    if (tab < 0) continue;
-    const oid = line.slice(0, tab).split(" ")[2] ?? "";
-    const file = line.slice(tab + 1);
+  for (const [file, oid] of files_) {
     files.set(file, oid);
     if (isCodeFile(file)) {
       code.push(file);
@@ -422,6 +418,7 @@ interface BlobInfo {
 export class ImportScanner {
   private reader = new BlobReader();
   /** blob 号 → 它里面的引用（只取决于正文，跨 commit 复用） */
+  private walker = new TreeWalker();
   private infoByBlob = new Map<string, BlobInfo>();
   /** 代码 + 声明的合并计数表（按约定加载用） */
   private mentions = new MentionTable();
@@ -443,7 +440,7 @@ export class ImportScanner {
   blobsRead = 0;
 
   async scan(sha: string): Promise<CommitScan> {
-    const snap = snapshot(sha);
+    const snap = snapshot(this.walker.filesAt(sha));
     if (snap.sig !== this.prevSig) {
       this.prevSig = snap.sig;
       this.scanned++;
