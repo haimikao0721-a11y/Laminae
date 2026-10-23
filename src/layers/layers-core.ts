@@ -170,7 +170,7 @@ export interface FileLayer {
   depth: Depth;
   /** 函数体是空的那些具名函数 */
   trivialFns: string[];
-  hollowFns: { name: string; line: number; reason: FnReason }[];
+  hollowFns: { name: string; line: number; reason: FnReason; arrow?: boolean }[];
   /** 本文件的 import，用来把函数调用追到别的文件 */
   imports: Binding[];
   /** 函数体只有一句调用，被调的名字不在本文件的问题函数里 */
