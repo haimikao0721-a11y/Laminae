@@ -14,6 +14,8 @@
 export type FnReason = "empty" | "return-const" | "unimplemented" | "calls-empty" | "calls-other";
 
 export interface FoundFn {
+  /** 是不是箭头函数（JS）。箭头是表达式，它空不空不能说明功能有没有做 */
+  arrow?: boolean;
   name: string | null;
   /** 这个函数本身有问题；null 表示看着有实现 */
   reason: FnReason | null;

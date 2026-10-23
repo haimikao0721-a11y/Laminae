@@ -128,10 +128,20 @@ export function delegatedCalls(rawText: string): { name: string; line: number; c
   return out;
 }
 
-export function hollowFunctions(text: string): { name: string; line: number; reason: FnReason }[] {
+export function hollowFunctions(text: string): { name: string; line: number; reason: FnReason; arrow?: boolean }[] {
   const fns = pickModule(text).findFunctions(text);
   return fns.flatMap((f) =>
-    f.name && f.reason ? [{ name: f.name, line: text.slice(0, f.start).split("\n").length, reason: f.reason }] : [],
+    f.name && f.reason
+      ? [
+          {
+            name: f.name,
+            line: text.slice(0, f.start).split("\n").length,
+            reason: f.reason,
+            // 箭头函数带上标记：文件级判定要用它，但「需要人工复核」的清单不要
+            ...(f.arrow ? { arrow: true } : {}),
+          },
+        ]
+      : [],
   );
 }
 
@@ -400,7 +410,7 @@ export interface CommitLayer {
   references: ContractHit[];
   clues: ClueHit[];
   /** 具名函数里往下看一层有问题的，带定义所在行 */
-  hollowFns?: { file: string; name: string; line: number; reason: FnReason }[];
+  hollowFns?: { file: string; name: string; line: number; reason: FnReason; arrow?: boolean }[];
   delegates?: { file: string; name: string; line: number; callee: string; local?: boolean }[];
   /** 认得出扩展名、但没有语法模块的文件，如 .java、.go */
   unsupported?: string[];
@@ -630,6 +640,16 @@ export function buildLayers(commits: readonly LayerCommit[]): LayersData {
       // click 上「当前成立」的 47 条里 45 条在 tests/、2 条在 examples/，src/ 里一条都没有。
       // 把它们报成「需要人工复核」，等于让真正的问题排不进前 40 条。
       if (isTestFile(h.file) || ENTRY_DIR.test(h.file) || TYPE_ONLY.test(h.file)) continue;
+      // 箭头函数不谈「需要复核」。
+      //
+      // 箭头是**表达式**，JS 里写常量谓词和空操作就是这个样子：
+      //   export const NO = () => false          （文档写着 "Always return false."）
+      //   const watchStopHandle = () => {}       （后面挂 .stop / .resume）
+      // vue 上「往下看一层」当前成立的三条全是这个形状，一条都不是缺陷。
+      //
+      // 但文件级判定仍然要用这个信号：一个文件里只有一句常量箭头，classifyDepth 会判
+      // placeholder —— 那是「这个文件没写什么」，和「这个函数要不要人看」不是一回事。
+      if (h.arrow && (h.reason === "empty" || h.reason === "return-const")) continue;
       const key = `${h.file}\u0000${h.name}\u0000${h.reason}`;
       mark(downFlags, key, i);
       downLine.set(key, h.line);
