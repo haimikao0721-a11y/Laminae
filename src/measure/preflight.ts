@@ -68,12 +68,19 @@ export function previewCommands(claims: readonly ClaimDef[], commitCount: number
  *   - 「跑多少次」在没配 watch 时直接写总数，因为那才是一次测试套件跑一万遍的样子
  *   - 出处不是自己写的时候，说「这个文件是随仓库来的」，而不是说「不安全」
  */
-export function formatPreflight(previews: readonly CommandPreview[], source: ClaimsSource, skipped: boolean): string {
+/** 为什么没跑。null 表示会跑 */
+export type SkipReason = "flag" | "untrusted" | null;
+
+export function formatPreflight(previews: readonly CommandPreview[], source: ClaimsSource, skip: SkipReason): string {
   if (previews.length === 0) return "";
   const lines: string[] = [];
 
-  if (skipped) {
-    lines.push(`命令类事实：${previews.length} 条，已按 --no-commands 跳过。`);
+  if (skip !== null) {
+    lines.push(
+      skip === "flag"
+        ? `命令类事实：${previews.length} 条，已按 --no-commands 跳过。`
+        : `命令类事实：${previews.length} 条，没有执行 —— 这份 claims 不是你写的。`,
+    );
     lines.push("  这些说法会记成「测不出来」，不会记成假 —— 没跑就是没跑，不是不成立。");
     lines.push("");
   } else {
@@ -95,7 +102,7 @@ export function formatPreflight(previews: readonly CommandPreview[], source: Cla
     // 这句是整个预检里最要紧的一行：命令是随仓库来的，还是使用者自己写的，性质完全不同
     lines.push(`        **这个文件被 git 跟踪**，是随仓库来的，不一定是使用者自己写的`);
     if (source.lastAuthor) lines.push(`        最后一次修改：${source.lastAuthor}，${source.lastDate ?? "日期未知"}`);
-    if (!skipped) lines.push(`        确认之后要跑，不确认就加 --no-commands 跳过`);
+    if (skip === null) lines.push(`        确认之后要跑，不确认就加 --no-commands 跳过`);
   } else {
     lines.push(`        没有被 git 跟踪，是本地的文件`);
   }

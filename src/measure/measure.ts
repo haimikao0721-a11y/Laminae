@@ -105,13 +105,50 @@ const claimsSource: ClaimsSource = (() => {
   const [who, when] = (meta ?? "").split("|");
   return { file: rel, tracked, lastAuthor: who ?? null, lastDate: when ?? null };
 })();
-const previews = previewCommands(claims, commits.length);
-const preflight = formatPreflight(previews, claimsSource, NO_COMMANDS);
-if (preflight) console.log(preflight);
 
-// --no-commands：连工作区都不开。观测事实自然全部落到「测不出来」，
+/**
+ * 出处门禁：把这些命令交出去跑之前，先问一句「这是谁写的」。
+ *
+ * claims.json 可以随仓库提交。克隆一个仓库、跑一次 laminae，就会执行里面的命令 ——
+ * 这个风险不是理论，我们自己的文档就在鼓励把 claims 提交进仓库，好让团队共用。
+ *
+ * 判断依据只有一条，而且 git 本来就知道：**这个文件最后一次是谁改的**。
+ *   - 文件没被跟踪 —— 是本地的，放行
+ *   - 跟踪了，最后改它的人就是本机 git 身份 —— 放行
+ *   - 跟踪了，作者是别人 —— 要 --trust-commands
+ *   - 读不到本机身份 —— 判不了，按不放行处理
+ *
+ * 不放行不等于整次失败：数仓库的事实照测，只是命令类那几条记成「测不出来」。
+ * 报告里其余部分是有效的，没必要因为一个信任问题把整份扔掉。
+ */
+const TRUST_COMMANDS = process.argv.includes("--trust-commands");
+const gate: { allowed: boolean; why: string } = (() => {
+  if (claimsSource.tracked !== true) return { allowed: true, why: "claims.json 没有被 git 跟踪，是本地的文件" };
+  const me = (git(["config", "user.email"]) ?? "").trim();
+  if (me === "") return { allowed: false, why: "读不到本机的 git 身份（user.email 没设），没法判断这份 claims 是不是你写的" };
+  const lastEmail = (git(["log", "-1", "--format=%ae", "--", claimsSource.file]) ?? "").trim();
+  if (lastEmail === me) return { allowed: true, why: `最后一次修改它的是你（${me}）` };
+  if (TRUST_COMMANDS) return { allowed: true, why: `最后一次修改它的是 ${lastEmail}，已按 --trust-commands 放行` };
+  return { allowed: false, why: `最后一次修改它的是 ${lastEmail || "未知作者"}，不是你（${me}）` };
+})();
+
+const previews = previewCommands(claims, commits.length);
+const skipReason = NO_COMMANDS ? "flag" : !gate.allowed ? "untrusted" : null;
+const preflight = formatPreflight(previews, claimsSource, skipReason);
+if (preflight) console.log(preflight);
+if (!gate.allowed && previews.length > 0) {
+  console.log(`\n命令没有执行：${gate.why}。`);
+  console.log("  这些说法会记成「测不出来」，不会记成假。");
+  console.log("  确认这些命令可以信任之后，加 --trust-commands 再跑一次。");
+  console.log("  只是不想跑命令的话，用 --no-commands。\n");
+} else if (!gate.allowed) {
+  console.log(`\n（没有要跑的命令。${gate.why}，但这不影响数仓库的事实。）\n`);
+}
+
+// 两个开关都让观察事实落空：命令类事实自然全部落到「测不出来」，
 // 而不是「假」—— 没跑就是没跑。
-const work = !NO_COMMANDS && observed.length > 0 ? openWorktree(REPO) : null;
+const SKIP_COMMANDS = NO_COMMANDS || !gate.allowed;
+const work = !SKIP_COMMANDS && observed.length > 0 ? openWorktree(REPO) : null;
 const trees = openTrees();
 /** 这个 commit 上真正要读正文的文件：说法点名的，再加上 watch 命中的 */
 const pickFiles = (paths: readonly string[]): string[] => {
@@ -141,7 +178,7 @@ try {
     for (const claim of claims) {
       if (isObserved(claim.fact)) {
         const fact = claim.fact;
-        const step = nextObservation({
+        const step = await nextObservation({
           fact,
           sha: c.sha,
           paths: tree.paths(),
@@ -177,7 +214,7 @@ try {
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.writeFileSync(
   path.join(DATA_DIR, "facts.json"),
-  JSON.stringify({ repo: REPO, generatedAt: new Date().toISOString(), commitCount: commits.length, commandsSkipped: NO_COMMANDS, commits: measured }, null, 2) + "\n",
+  JSON.stringify({ repo: REPO, generatedAt: new Date().toISOString(), commitCount: commits.length, commandsSkipped: SKIP_COMMANDS, commits: measured }, null, 2) + "\n",
   "utf8",
 );
 fs.writeFileSync(path.join(DATA_DIR, "docs-by-commit.json"), JSON.stringify({ texts: docTexts, commits: docBodies }) + "\n", "utf8");

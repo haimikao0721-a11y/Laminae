@@ -27,7 +27,7 @@ export interface ClaimWarning {
   id: string;
   label: string;
   level: "error" | "warn";
-  code: "ignored-fact-field" | "capture-not-number" | "locator-miss";
+  code: "ignored-fact-field" | "capture-not-number" | "locator-miss" | "locator-redos";
   /** 会原样出现在报告里，所以要能被人看懂、能照着改 */
   message: string;
 }
@@ -58,6 +58,31 @@ function isNumeric(f: ClaimDef["fact"]): boolean {
  * @param claims 解析后的说法
  * @param readDoc 读某个文件在基准 commit 上的正文，读不到返回 null
  */
+/**
+ * locator 里可能灾难性回溯的写法。
+ *
+ * 这不是理论：我自己写过一个
+ *   [A-Za-z0-9_@][A-Za-z0-9_.\-]*(?:\/[A-Za-z0-9_.\-]+)*\.[A-Za-z0-9]{1,8}
+ * 在 5.6 MB 正文上占掉了整条流水线 43% 的时间。而 locator 是**在整份文档上**跑的，
+ * 文档动辄几十万字 —— 一个写坏的正则能让工具卡到人以为死机。
+ *
+ * 认三种形状：
+ *   一、量词套量词        (a+)+  (\w*)*  ([^)]+)*
+ *   二、量词后面还有分支   (a|a)+
+ *   三、点星套在分组里再量化  (.*)* 
+ *
+ * 只警告，不改判定 —— 判定那一侧已经收住了，不能因为一个性能提示去碰它。
+ */
+export function redosRisk(locator: string): string | null {
+  // 量词套量词：分组里有 * + 或 {n,}，分组本身又被 * + {n,} 量化
+  const nested = /\(([^()]*?)(?:[*+]|\{\d+,\})\)\s*(?:[*+]|\{\d+,\})/;
+  if (nested.test(locator)) return "量词套量词（分组里有 * 或 +，分组本身又被 * 或 + 量化）";
+  // 一个分支两侧都以同一个开头收尾，配合重复会退化成指数级
+  const alternation = /\(([^()|]+)\|\1\)/;
+  if (alternation.test(locator)) return "分组里的两个分支写法太接近，重复匹配会退化";
+  return null;
+}
+
 export function lintClaims(
   raw: readonly unknown[],
   claims: readonly ClaimDef[],
@@ -87,6 +112,22 @@ export function lintClaims(
 
     // 二、数字类事实，但捕获到的不是数
     const doc = readDoc(c.file);
+
+    // 一之半、locator 可能有灾难性回溯。
+    //
+    // 放在读文档之前：这个检查只看正则本身，不需要文档。而且万一正则真的会卡，
+    // 下面那行 exec 就直接卡住了，警告也就发不出来。
+    const risk = redosRisk(c.locator);
+    if (risk !== null) {
+      push(
+        "warn",
+        "locator-redos",
+        `locator 有${risk}，在很长的文档上可能卡住甚至跑不完。` +
+          `locator 是在整份文档上跑的，文档动辄几十万字。` +
+          `建议改成不含嵌套量词的写法 —— 这只是个性能提示，不影响判定。`,
+      );
+    }
+
     if (doc === null) {
       push("warn", "locator-miss", `基准提交上读不到 ${c.file}，这条说法在第一个提交之前都没有依据。`);
       return;

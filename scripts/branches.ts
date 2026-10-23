@@ -96,13 +96,13 @@ function truth(v: number | null): "真" | "假" | "测不出来" {
   return v === 1 ? "真" : "假";
 }
 
-function evaluate(
+async function evaluate(
   sha: string,
   claims: ReturnType<typeof parseClaims>,
   locators: Map<string, RegExp>,
   trees: ReturnType<typeof openTrees>,
   observer: { at(sha: string): string | null; caches: Map<string, ObserveCache | undefined> },
-): Map<string, number | null> {
+): Promise<Map<string, number | null>> {
   const tree = trees.at(sha, () => []);
   const vals = new Map<string, number | null>();
   for (const c of claims) {
@@ -112,7 +112,7 @@ function evaluate(
     // 不是「测不出来」—— 分支上到底跑不跑得通，是能测的，只是要付一次检出。
     // 所以现在真跑；watch 指定的文件没变就不重跑，靠 nextObservation 的缓存。
     if (isObserved(c.fact)) {
-      const observed = nextObservation({
+      const observed = await nextObservation({
         fact: c.fact,
         sha,
         paths: c.fact.watch ?? [],
@@ -136,7 +136,7 @@ function evaluate(
   return vals;
 }
 
-function main(): void {
+async function main(): Promise<void> {
   if (!fs.existsSync(CLAIMS_PATH)) throw new Error(`找不到 ${CLAIMS_PATH}`);
   const claims = parseClaims(JSON.parse(fs.readFileSync(CLAIMS_PATH, "utf8")));
   if (claims.length === 0) throw new Error("claims.json 里没有说法");
@@ -158,7 +158,7 @@ function main(): void {
 
   const trees = openTrees();
   const locators = new Map(claims.map((c) => [c.id, new RegExp(c.locator)]));
-  const mainVals = evaluate(mainSha, claims, locators, trees, observer);
+  const mainVals = await evaluate(mainSha, claims, locators, trees, observer);
 
   const all = branches();
   const results: BranchResult[] = [];
@@ -169,7 +169,7 @@ function main(): void {
       skippedMerged++;
       continue;
     }
-    const vals = evaluate(b.sha, claims, locators, trees, observer);
+    const vals = await evaluate(b.sha, claims, locators, trees, observer);
     const { ahead, behind } = aheadBehind(mainSha, b.sha);
     const date = git(["log", "-1", "--format=%ad", "--date=short", b.sha])?.trim() ?? "";
     const rows: Row[] = [];
@@ -232,5 +232,5 @@ function main(): void {
   console.log(interesting.length === 0 ? "没有分支改变某条说法的真假。" : `${interesting.length} 个分支改变了某条说法的真假。`);
 }
 
-main();
+void main();
 void DEFAULT_TOLERANCE;

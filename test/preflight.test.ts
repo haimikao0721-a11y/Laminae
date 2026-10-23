@@ -26,39 +26,39 @@ const SOURCE_TRACKED = { file: ".laminae/claims.json", tracked: true, lastAuthor
 
 test("命令原文完整打印，不截断", () => {
   const long = { ...CLAIM, fact: { ...CLAIM.fact, command: `npm test ${"x".repeat(200)} --tail-marker` } } as ClaimDef;
-  const text = formatPreflight(previewCommands([long], 1), SOURCE_LOCAL, false);
+  const text = formatPreflight(previewCommands([long], 1), SOURCE_LOCAL, null);
   assert.match(text, /--tail-marker/, "尾巴不能被截掉 —— 截断正好能藏住东西");
   assert.match(text, /x{200}/);
 });
 
 test("说清楚要跑多少次：没配 watch 就是每个 commit 一次", () => {
   const noWatch = { ...CLAIM, fact: { ...CLAIM.fact, watch: undefined } } as ClaimDef;
-  const text = formatPreflight(previewCommands([noWatch], 6513), SOURCE_LOCAL, false);
+  const text = formatPreflight(previewCommands([noWatch], 6513), SOURCE_LOCAL, null);
   assert.match(text, /6513 个 commit/, "一万个 commit 上各跑一次测试，这件事必须先看见");
   assert.match(text, /每个都要跑一次/);
 });
 
 test("配了 watch 时说清只会跑变动的那些", () => {
-  const text = formatPreflight(previewCommands([CLAIM], 6513), SOURCE_LOCAL, false);
+  const text = formatPreflight(previewCommands([CLAIM], 6513), SOURCE_LOCAL, null);
   assert.match(text, /watch src\/\*\*/);
   assert.match(text, /只有这些文件变了的 commit 才跑/);
 });
 
 test("出处被 git 跟踪时要标明：这是随仓库来的", () => {
-  const text = formatPreflight(previewCommands([CLAIM], 1), SOURCE_TRACKED, false);
+  const text = formatPreflight(previewCommands([CLAIM], 1), SOURCE_TRACKED, null);
   assert.match(text, /被 git 跟踪/);
   assert.match(text, /随仓库来的/);
   assert.match(text, /someone <s@example\.com>/);
 });
 
 test("出处是本地的文件时，不吓唬人", () => {
-  const text = formatPreflight(previewCommands([CLAIM], 1), SOURCE_LOCAL, false);
+  const text = formatPreflight(previewCommands([CLAIM], 1), SOURCE_LOCAL, null);
   assert.match(text, /没有被 git 跟踪/);
   assert.doesNotMatch(text, /随仓库来的/);
 });
 
 test("--no-commands 时说清楚：记成测不出来，不是假", () => {
-  const text = formatPreflight(previewCommands([CLAIM], 1), SOURCE_TRACKED, true);
+  const text = formatPreflight(previewCommands([CLAIM], 1), SOURCE_TRACKED, "flag");
   assert.match(text, /--no-commands 跳过/);
   assert.match(text, /记成「测不出来」/);
   assert.match(text, /不是不成立/);
@@ -67,5 +67,5 @@ test("--no-commands 时说清楚：记成测不出来，不是假", () => {
 test("只有数仓库的事实时不打这一段（没什么要看的）", () => {
   const plain = { ...CLAIM, fact: { type: "path-exists" } } as ClaimDef;
   assert.deepEqual(previewCommands([plain], 10), []);
-  assert.equal(formatPreflight([], SOURCE_LOCAL, false), "");
+  assert.equal(formatPreflight([], SOURCE_LOCAL, null), "");
 });
