@@ -27,7 +27,7 @@ export interface ClaimWarning {
   id: string;
   label: string;
   level: "error" | "warn";
-  code: "ignored-fact-field" | "capture-not-number" | "locator-miss" | "locator-redos";
+  code: "ignored-fact-field" | "capture-not-number" | "locator-miss" | "locator-redos" | "locator-multi-match" | "placeholder-fact";
   /** 会原样出现在报告里，所以要能被人看懂、能照着改 */
   message: string;
 }
@@ -47,6 +47,27 @@ const FIELDS: Record<string, readonly string[]> = {
   "invariant-holds": ["type", "command", "watch", "timeout", "source"],
   "output-unchanged": ["type", "command", "watch", "timeout"],
 };
+
+/**
+ * 这条事实是不是**还是个占位**。
+ *
+ * init 生成的草稿里，fact 用的是默认值：数所有文件、或者只问 package.json
+ * 有没有 scripts 这个键。这两个数**和文档那句话没有关系**。
+ *
+ * 危险的地方在于它照样能跑出结果：报告里会显示成「真」或「假」，
+ * 看起来像结论，其实是没调好的机器。
+ *
+ * 只认这两种形状，不去猜别的 —— 猜错一次，人以后就不看这条警告了。
+ */
+export function placeholderFact(f: ClaimDef["fact"]): string | null {
+  if (f.type === "count-files" && (f.glob === "**/*" || f.glob === "**" || f.glob === "*" || f.glob === "")) {
+    return "还在数「仓库里的所有文件」";
+  }
+  if (f.type === "json-has-key" && f.path === "scripts") {
+    return "只在问 package.json 有没有 scripts 这个键，任何 npm 项目都有";
+  }
+  return null;
+}
 
 /** 要跟数比的事实。这类说法的 locator 第 1 个捕获组必须是数 */
 function isNumeric(f: ClaimDef["fact"]): boolean {
@@ -132,6 +153,37 @@ export function lintClaims(
       push("warn", "locator-miss", `基准提交上读不到 ${c.file}，这条说法在第一个提交之前都没有依据。`);
       return;
     }
+    // 二之半、locator 在同一份文档里匹配到多处。
+    //
+    // 判定只取第一处（下面那行 exec 就是这样），绑到哪句全看谁在前面。
+    // 以前这件事完全静默：文档里加一句相似的话，结论就换了，而且看不出来。
+    const matches = [...doc.matchAll(new RegExp(c.locator, "g"))];
+    if (matches.length > 1) {
+      const lines = matches.slice(0, 5).map((x) => doc.slice(0, x.index).split("\n").length);
+      push(
+        "warn",
+        "locator-multi-match",
+        `locator 在 ${c.file} 里匹配到 ${matches.length} 处（第 ${lines.join("、")} 行），判定只取第一处。` +
+          `这不会让结论「错」，但会让它绑在你没打算绑的那句话上。` +
+          `把 locator 前后多带几个字，让它只对上一处。`,
+      );
+    }
+
+    // 二之三、事实还是 init 写下的占位。
+    //
+    // 它照样能跑出结果，报告里显示成「真」或「假」—— 看起来像结论，
+    // 其实是没调好的机器。这一条比「测不出来」更该说：测不出来至少没人会当真。
+    const placeholder = placeholderFact(c.fact);
+    if (placeholder !== null) {
+      push(
+        "error",
+        "placeholder-fact",
+        `这条说法量错了东西：${placeholder}。` +
+          `量出来的数和文档那句话没有关系，所以下面每一格的真假都不能当真。` +
+          `locator 可以留，把 fact 改成该数的东西（见 docs/PATTERNS.md）。`,
+      );
+    }
+
     const m = new RegExp(c.locator).exec(doc);
     if (!m) {
       push("error", "locator-miss", `locator 在 ${c.file} 里一处都没匹配到。整段历史都会是「尚未写入文档」，先跑 lookup 看它到底捕获到了什么。`);
@@ -154,7 +206,7 @@ export function lintClaims(
 export function formatWarnings(warnings: readonly ClaimWarning[]): string {
   if (warnings.length === 0) return "";
   const errs = warnings.filter((w) => w.level === "error").length;
-  const head = `${warnings.length} 条说法的写法有问题${errs > 0 ? `（其中 ${errs} 条会导致状态不可信）` : ""}：`;
+  const head = `${warnings.length} 条警告${errs > 0 ? `（其中 ${errs} 条会让状态不可信）` : ""}：`;
   const body = warnings.map((w) => `  ${w.level === "error" ? "✗" : "!"} ${w.label}：${w.message}`);
   return [head, ...body].join("\n");
 }
