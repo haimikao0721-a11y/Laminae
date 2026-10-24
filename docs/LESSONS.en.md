@@ -8,6 +8,23 @@ Two kinds: **defects in the tool** (it accuses wrongly, misses things, or crashe
 
 ---
 
+### When checking a tool, use the tool's unit
+
+**Symptom** Validating `branches.ts` and `merges.ts` on click. My first check reported two "the tool missed this" cases, and **both times I was the one who was wrong**.
+
+**First** On `origin/stable`, `CHANGES.md` says `## Version 8.5.1`; on main it says `8.6.0`. The text differs, so I said the tool should have reported it. But the tool compares **claim values**: each version number appears in that side's own `pyproject.toml`, so both sides are "true". The value did not change, and not reporting it is correct.
+
+**Second** Merge `06b2a67` bumped the version from 8.5.1 to 8.6.0, and again I said "should have reported". Same mistake: the claim was true on both sides of that merge.
+
+**The one it did report** is `4fc0e90 Move changes to markdown`: on the first parent `CHANGES.md` **does not exist yet** (it was `CHANGES.rst` then), so the claim is "cannot be measured"; on the branch it exists and is true; after the merge it is true. Three sides not all equal, and the tool reported exactly that — correct.
+
+**Lesson** This tool's unit is **the value of one claim at one commit**, not a stretch of text in a document. Checking it against document text produces conclusions like "it missed this", which are false.
+
+**Before validating any tool, ask what its unit of judgement is.** If the units differ, you are not validating the same thing.
+
+---
+
+
 ### Evidence with no grades says everything is equally reliable
 
 **Symptom** The buckets in the report differ in reliability by an order of magnitude — "a contract does not line up" and "an orphan module" are not remotely the same kind of claim — yet they sit side by side on the page, and the UI can only paste one sentence over the whole block.
