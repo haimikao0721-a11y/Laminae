@@ -13,7 +13,7 @@
   "files": [
     "build",
     "dist",
-    "web",
+    "web/style.css",
     "docs/LESSONS.md",
     "docs/LESSONS.en.md",
     "docs/STATUS.md",
@@ -51,7 +51,8 @@
     "test": "node --test \"test/**/*.test.ts\"",
     "build:cli": "node scripts/build-cli.ts",
     "build": "node scripts/build-cli.ts && node scripts/build-web.ts",
-    "prepublishOnly": "node scripts/build-cli.ts"
+    "prepublishOnly": "node scripts/build-cli.ts",
+    "prepare": "node scripts/build-cli.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

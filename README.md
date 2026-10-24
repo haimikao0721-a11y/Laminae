@@ -12,7 +12,7 @@
 
 ## 一、它回答什么
 
-![裁决](docs/demo/01-verdict.png)
+![裁决](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/01-verdict.png)
 
 中位 hiatus **91 个 commit / 720 小时**：一条说法从变假到被收场，中间隔着 91 个提交。
 
@@ -20,7 +20,7 @@
 
 ## 二、每一段假的多长、怎么结束的
 
-![假段](docs/demo/02-runs.png)
+![假段](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/02-runs.png)
 
 不用点开就能看到：从哪个 commit 开始变假、当时文档写的什么、实际是什么、哪个 commit 以什么方式收场、一共挂了多久（`共 69 commit / 720.03 小时`）。
 
@@ -28,13 +28,13 @@
 
 ## 三、往下看一层
 
-![往下看一层](docs/demo/03-down.png)
+![往下看一层](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/03-down.png)
 
 说法为真、但指着的文件像空壳时，标出来。**当前成立 0 条；另有 44 条只在历史提交里出现过**，折叠着，不占版面。
 
 ## 四、每一块结论能拿它做什么
 
-![证据等级](docs/demo/04-layers.png)
+![证据等级](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/04-layers.png)
 
 这是整个工具最要紧的一栏。四个等级说的是**这条结论能拿它做什么**，不是严重程度：
 
@@ -49,7 +49,7 @@
 
 ## 五、结构长什么样
 
-![引用关系](docs/demo/05-graph.png)
+![引用关系](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/05-graph.png)
 
 逐 commit 的模块引用图，只到模块级的 import。默认只画鼠标指着的那个模块的线。底下是模块数曲线，可以按时间点切。
 
@@ -57,14 +57,15 @@
 
 ## 跑起来
 
-装成一条命令：
+装成一条命令，直接从仓库装，不经过 npm 注册表：
 
 ```bash
-npm install -g laminae
+npm install -g github:haimikao0721-a11y/Laminae#v0.1.0
 laminae --help
 ```
 
-不装也行，直接用仓库里的源码（八个脚本各自独立，参数一模一样）。
+第一次装会多花十几秒——装完自动把命令打包一遍。不装也行，直接用仓库里的源码
+（八个脚本各自独立，参数一模一样）。
 
 
 需要 git，以及能直接跑 `.ts` 的 Node（24.7 上验证过）。目标项目不需要装依赖。

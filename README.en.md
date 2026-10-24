@@ -12,7 +12,7 @@ Everything below comes from a real repository, [vuejs/core](https://github.com/v
 
 ## 1. What it answers
 
-![Verdict](docs/demo/01-verdict.png)
+![Verdict](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/01-verdict.png)
 
 Median hiatus **91 commits / 720 hours**: from the moment a claim turns false to the moment it is settled, 91 commits pass.
 
@@ -20,7 +20,7 @@ The sample is 6 true-then-false runs, none still hanging. Of the 4 claims, 1 was
 
 ## 2. How long each false run lasted, and how it ended
 
-![False runs](docs/demo/02-runs.png)
+![False runs](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/02-runs.png)
 
 No clicking required: which commit it turned false at, what the document said then, what was actually there, which commit settled it and how, and how long it hung.
 
@@ -28,13 +28,13 @@ The "bumped the package, forgot the changelog" shape is plain to see: `3.0.11` i
 
 ## 3. One layer down
 
-![One layer down](docs/demo/03-down.png)
+![One layer down](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/03-down.png)
 
 When a claim is true but the file it points at looks hollow, it is marked. **0 currently holding; another 44 appeared only in historical commits**, folded away so they do not take up the page.
 
 ## 4. What each conclusion can be used for
 
-![Evidence grades](docs/demo/04-layers.png)
+![Evidence grades](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/04-layers.png)
 
 This is the most important column in the whole tool. The four grades say **what a conclusion can be used for**, not how severe it is:
 
@@ -49,7 +49,7 @@ The column is enforced by the type system: add a new bucket without a grade and 
 
 ## 5. What the structure looks like
 
-![Reference graph](docs/demo/05-graph.png)
+![Reference graph](https://raw.githubusercontent.com/haimikao0721-a11y/Laminae/main/docs/demo/05-graph.png)
 
 A per-commit module reference graph, module-level imports only. By default it only draws the lines of the module under the cursor. Below it is a module-count curve you can pick a point on.
 
@@ -57,13 +57,14 @@ A per-commit module reference graph, module-level imports only. By default it on
 
 ## Running it
 
-Install it as one command:
+Install it as one command, straight from the repository, without going through the npm registry:
 
 ```bash
-npm install -g laminae
+npm install -g github:haimikao0721-a11y/Laminae#v0.1.0
 laminae --help
 ```
 
+The first install takes ten seconds longer: it builds the command automatically after installing.
 Or run the sources directly, without installing (the eight scripts are independent and take the same arguments).
 
 
