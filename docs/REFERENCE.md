@@ -35,6 +35,10 @@
 | `--new-run` | 分步手跑时另开一次，不接着 `latest` |
 | `--jobs <N>` | 并发度。默认取 CPU 数与仓库数里小的那个；有需要执行命令的说法时强制为 1 |
 | `--allow-parallel-commands` | 即使有 `test-passes` 之类的命令也强制并行 |
+| `--from <步号或名字>` | 从第几步开始跑。改了解析或规则时用它跳过最贵的测量 |
+| `--to <步号或名字>` | 跑到第几步为止 |
+| `--no-commands` | 不跑命令类事实，一律记成「测不出来」 |
+| `--trust-commands` | 放行出处不在本机名下的 claims 里的命令 |
 | `data` | 只跑到第 5 步，不渲染 HTML |
 | `--verbose` | 打印完整的逐 commit 时间线 |
 
@@ -43,7 +47,7 @@
 | 位置 | 内容 |
 |---|---|
 | `.laminae/runs/<id>/laminae.html` | 报告，单文件，数据、样式、脚本全部内联，无外部请求 |
-| `.laminae/runs/<id>/payload.json` | 完整数据。够重渲染；两份之间可以自己 diff，工具还没有对比命令 |
+| `.laminae/runs/<id>/payload.json` | 完整数据。够重渲染；两份之间的差异用 `scripts/diff.ts` 看 |
 | `.laminae/latest` | 最近一次运行的 id |
 | `.laminae/data/` | 中间数据，共享一份，每次覆盖，可删 |
 | `.laminae/data/graph.json` | 模块引用图：节点与边在哪些 commit 区间存在。文件超过 350 个时按目录合并成节点，测试文件打标并默认隐藏 |
@@ -66,8 +70,47 @@
 - 同一个 `--run` 名字跑第二次会覆盖那一次，并提前打印提示。想两个人各留一份就换个名字。
 - 分步手跑且没给 `LAMINAE_RUN` 时，会接着 `.laminae/latest` 指向的那次，六步才落在同一个目录里。要另开一次用 `--new-run`。
 - 只留档 `payload.json` 与 `laminae.html`，中间数据共享一份。几百个 commit 的仓库逐次复制 `docs-by-commit.json` 会把磁盘吃光。
-- 代价：`facts.json`、`timeline.json` 这些草稿每次运行都被覆盖。换了判定规则之后想拿旧数据重跑分析，做不到，只能整次重跑。
-- 「留了两份报告」本身不产生结论。要比较两次调用的差异，得自己 diff 两个 `payload.json`；工具没有这个命令。
+- `facts.json`、`timeline.json` 这些草稿每次运行都被覆盖。但六步是分开的，换判定规则不用整次重跑，见下面的分步重跑。
+- 「留了两份报告」本身不产生结论。要比两次调用的差异，用 `node scripts/diff.ts <旧> <新>`。
+
+### 分步重跑
+
+六步是分开的，可以只跑其中几步。改判定规则、改构建期加工、改渲染，都不必重跑最贵的逐 commit 测量。
+
+```bash
+node scripts/run.ts --from 2                # 从第 2 步起
+node scripts/run.ts --from analyze --to 5   # 名字里的一段也认
+node scripts/run.ts --from 5                # 只重算构建期加工和渲染
+```
+
+vue（6513 个 commit）上实测：完整跑 426 秒，只重跑判定 1 秒、加工加渲染 2 秒，产物完全一致。
+
+跳过的步骤依赖的中间数据不在时，会停下来告诉你先跑哪一步——不会让后面几步读到空文件、产出一份看起来正常的空报告。没跑到最后一步时不跑 `verify`：硬跑会去校上一份旧产物。
+
+### 比较两次运行
+
+```bash
+node scripts/diff.ts <旧运行> <新运行>     # 运行 id 或 payload 路径都行
+node scripts/diff.ts <旧> <新> --json      # 机器可读
+```
+
+比四类：说法的状态序列（第一个不同的 commit、影响多少格、分成几段）、层那几档的增减（列到具体文件）、图的节点与边、汇总口径。
+
+提交序列不一样时（历史被改写、两次之间多了新提交）按 sha 对齐，并明确报出只在一侧出现的提交数——静默按下标比会把整条时间线错开一位。
+
+### 目录
+
+```
+src/core/     配置、git 调用、路径、运行 id、仓库发现
+src/measure/  事实声明与求值、逐 commit 测量、说法体检
+src/judge/    分段、结局判定、生存估计
+src/layers/   语法模块、引用图、层与层的对账
+src/ideas/    想法、边界、线索
+src/output/   构建期加工、渲染、多仓库汇总页
+scripts/      run / init / diff / derive / trace / branches / merges / verify
+web/          浏览器侧（编译到 dist/app.js 后内联进报告）
+docs/         规格、参考、说法模式、语言、踩过的坑、现状
+```
 
 ### 数值说法的限制
 

@@ -35,6 +35,10 @@ These are consumed by `scripts/run.ts` and are not passed on to the individual s
 | `--new-run` | Start a separate run when running step by step by hand, instead of continuing from `latest` |
 | `--jobs <N>` | Concurrency. Defaults to the smaller of the CPU count and the repository count; forced to 1 when there are claims that need to execute commands |
 | `--allow-parallel-commands` | Force parallelism even when there are commands such as `test-passes` |
+| `--from <step number or name>` | Start at that step. Use it to skip the expensive measurement after changing a parser or a rule |
+| `--to <step number or name>` | Stop after that step |
+| `--no-commands` | Do not run command-based facts; they are all recorded as "cannot be measured" |
+| `--trust-commands` | Allow the commands in claims whose provenance is not this machine |
 | `data` | Run only through step 5, without rendering HTML |
 | `--verbose` | Print the full per-commit timeline |
 
@@ -43,7 +47,7 @@ These are consumed by `scripts/run.ts` and are not passed on to the individual s
 | Location | Contents |
 |---|---|
 | `.laminae/runs/<id>/laminae.html` | The report; a single file with data, styles and scripts all inlined, no external requests |
-| `.laminae/runs/<id>/payload.json` | Full data. Enough to re-render; two copies can be diffed by hand, the tool has no comparison command yet |
+| `.laminae/runs/<id>/payload.json` | Full data. Enough to re-render; compare two of them with `scripts/diff.ts` |
 | `.laminae/latest` | The id of the most recent run |
 | `.laminae/data/` | Intermediate data, one shared copy, overwritten every time, safe to delete |
 | `.laminae/data/graph.json` | Module import graph: in which commit ranges nodes and edges exist. Above 350 files, files are merged into nodes by directory; test files are tagged and hidden by default |
@@ -66,8 +70,47 @@ The parent directory (the level that is not a repository but has repositories be
 - Running the same `--run` name a second time overwrites that run, and prints a notice beforehand. If two people each want to keep a copy, use a different name.
 - When running step by step by hand without `LAMINAE_RUN`, it continues the run that `.laminae/latest` points to, so all six steps land in the same directory. To start a separate run, use `--new-run`.
 - Only `payload.json` and `laminae.html` are kept; the intermediate data is one shared copy. For a repository with hundreds of commits, copying `docs-by-commit.json` on every run would fill up the disk.
-- The cost: scratch files such as `facts.json` and `timeline.json` are overwritten on every run. After changing the decision rules, re-running the analysis against the old data is not possible; only a full re-run.
-- “Two reports were kept” does not by itself produce a conclusion. To compare the difference between two invocations you have to diff the two `payload.json` files yourself; the tool has no such command.
+- Scratch files such as `facts.json` and `timeline.json` are overwritten on every run. But the six steps are separate, so changing a decision rule does not require a full re-run; see step-by-step reruns below.
+- “Two reports were kept” does not by itself produce a conclusion. To compare two invocations, use `node scripts/diff.ts <older> <newer>`.
+
+### Step-by-step reruns
+
+The six steps are separate, and you can run only some of them. Changing a decision rule, the build-time pass, or rendering does not require re-running the expensive per-commit measurement.
+
+```bash
+node scripts/run.ts --from 2                # start at step 2
+node scripts/run.ts --from analyze --to 5   # a fragment of the name works too
+node scripts/run.ts --from 5                # only the build-time pass and rendering
+```
+
+Measured on vue (6513 commits): a full run takes 426 seconds, re-running just the judgement takes 1 second, and the build-time pass plus rendering takes 2 seconds, with an identical result.
+
+When the intermediate data a skipped step depends on is missing, it stops and tells you which step to run first — it will not let the later steps read empty files and produce an empty report that looks normal. When the last step is not reached, `verify` does not run: running it would check the previous run's artifact.
+
+### Comparing two runs
+
+```bash
+node scripts/diff.ts <older run> <newer run>   # run id or payload path
+node scripts/diff.ts <older> <newer> --json    # machine readable
+```
+
+It compares four things: the claim state sequences (first differing commit, how many cells, how many segments), the added and removed entries in the layer buckets (down to specific files), the graph's nodes and edges, and the tally.
+
+When the commit sequences differ (history rewritten, new commits between the two runs), it aligns by sha and reports how many commits appear on only one side — silently comparing by index would shift the whole timeline by one.
+
+### Layout
+
+```
+src/core/     config, git calls, paths, run ids, repository discovery
+src/measure/  fact declarations and evaluation, per-commit measurement, claim lint
+src/judge/    segmentation, outcome classification, survival estimate
+src/layers/   syntax modules, import graph, layer reconciliation
+src/ideas/    ideas, boundaries, clues
+src/output/   build-time pass, rendering, multi-repository index
+scripts/      run / init / diff / derive / trace / branches / merges / verify
+web/          browser side (compiled to dist/app.js, then inlined into the report)
+docs/         spec, reference, claim patterns, languages, pitfalls, status
+```
 
 ### Limits of numeric claims
 
