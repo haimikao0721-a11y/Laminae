@@ -9,8 +9,6 @@
  * 要跑命令才知道的事实（测试、不变量、输出差分）这里不执行。
  */
 import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { parseClaims } from "./claims.ts";
 import { judgeState, parseClaimedNumber } from "../judge/classify.ts";
 import { evalFact, factFiles, isObserved, isReferential } from "./facts.ts";
@@ -20,6 +18,7 @@ import { git, openTrees } from "../core/gitutil.ts";
 import { CLAIMS_PATH } from "../core/paths.ts";
 import type { ClaimDef } from "../core/types.ts";
 import { FALSE, TRUE, UNMEASURED } from "../core/types.ts";
+import { isEntry } from "../core/entry.ts";
 
 export interface HeadLook {
   id: string;
@@ -94,5 +93,4 @@ function main(): void {
   if (bad > 0) console.log(`\n${bad} 条现在对不上。改 locator 或 fact，不要直接写进 claims.json。`);
 }
 
-const entry = process.argv[1] ? path.resolve(process.argv[1]) : "";
-if (entry === path.resolve(fileURLToPath(import.meta.url))) main();
+if (isEntry(import.meta.url)) main();

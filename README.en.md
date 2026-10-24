@@ -57,6 +57,16 @@ A per-commit module reference graph, module-level imports only. By default it on
 
 ## Running it
 
+Install it as one command:
+
+```bash
+npm install -g laminae
+laminae --help
+```
+
+Or run the sources directly, without installing (the eight scripts are independent and take the same arguments).
+
+
 Needs git, and a Node that can run `.ts` directly (validated on 24.7). The target project needs no dependencies.
 
 ```bash

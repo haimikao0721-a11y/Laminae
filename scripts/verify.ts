@@ -29,6 +29,7 @@ import { parseClaims } from "../src/measure/claims.ts";
 import { evalFact, isObserved, isReferential } from "../src/measure/facts.ts";
 import { git, openTrees } from "../src/core/gitutil.ts";
 import { CLAIMS_PATH, RUNS_DIR, RUN_DIR, SKILL_ROOT } from "../src/core/paths.ts";
+import { entryScript } from "../src/core/entry.ts";
 import type { Payload } from "../src/core/types.ts";
 
 const argv = process.argv.slice(2);
@@ -84,7 +85,7 @@ function checkReplay(payloadPath: string, htmlPath: string): void {
   const tmp = path.join(os.tmpdir(), `laminae-replay-${process.pid}.html`);
   const r = spawnSync(
     process.execPath,
-    [path.join(SKILL_ROOT, "src", "output", "render.ts"), "--payload", payloadPath, "--out", tmp],
+    [entryScript("src/output/render.ts"), "--payload", payloadPath, "--out", tmp],
     { cwd: process.cwd(), encoding: "utf8", timeout: 300_000 },
   );
   if (r.status !== 0) {

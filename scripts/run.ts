@@ -29,6 +29,7 @@
  * 确定互不干扰时用 --allow-parallel-commands 强制并行。
  */
 import { spawn } from "node:child_process";
+import { entryScript } from "../src/core/entry.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -321,7 +322,7 @@ function emitNotices(spec: RepoSpec, r: StepResult): void {
 
 function runStep(repo: string, file: string, passArgs: string[]): Promise<StepResult> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join(ROOT, file), ...passArgs], {
+    const child = spawn(process.execPath, [entryScript(file), ...passArgs], {
       cwd: repo,
       env: { ...process.env, LAMINAE_REPO: repo, LAMINAE_RUN: RUN_ID },
       stdio: ["ignore", "pipe", "pipe"],
