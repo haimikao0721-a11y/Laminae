@@ -60,7 +60,7 @@
 装成一条命令，直接从仓库装，不经过 npm 注册表：
 
 ```bash
-npm install -g github:haimikao0721-a11y/Laminae#v0.1.2
+npm install -g github:haimikao0721-a11y/Laminae#v0.1.0
 laminae --help
 ```
 

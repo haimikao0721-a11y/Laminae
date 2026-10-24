@@ -1,47 +1,23 @@
 # 更新记录
 
-## v0.1.2 —— 版本号对上了
-
-v0.1.1 改了安装但忘了改 `package.json` 里的 `version`，于是 `laminae --version` 说自己还是 0.1.0。
-这一版只做一件事：**版本号跟 tag 一致**。
-
-```bash
-npm install -g github:haimikao0721-a11y/Laminae#v0.1.2
-laminae --version   # 0.1.2
-```
-
-从 v0.1.2 起，打 tag 之前先看 `package.json` 的版本——这一条也写进了 CONTRIBUTING。
-
-## v0.1.1 —— 从 GitHub 直接装
-
-v0.1.0 的那个 tag **装不出命令**，这一版修掉。现在：
-
-```bash
-npm install -g github:haimikao0721-a11y/Laminae#v0.1.1
-laminae --help
-```
-
-### 修了什么
-
-**一、`npm install github:...` 装完没有 laminae 命令，而且不报错。**
-`build/` 里是打包产物、不进版本库，而 bin 指向 `build/laminae.mjs`。
-从注册表装时文件都在 tarball 里；从 git 装时仓库里根本没有 build/，
-npm 发现 bin 指向的文件不存在就**静默跳过**建立命令链接。
-加了 `prepare` 脚本，装完依赖后自动打包。
-
-**二、包里带了不该带的。** 原来整个 `web/` 都打进去，包括 7 个 `.ts` 源码约 130 KB。
-运行时只需要 `dist/app.js` 和 `web/style.css`。
-
-**三、README 的五张截图不在发布清单里。** 相对路径在 npm 页面上是裂图，改成绝对地址。
-
-### 验证
-
-- 从分支装：35 秒，命令有了，`laminae run` 在 click 上跑完产出 444 KB 报告，`verify` 4 项通过
-- 292 条测试全过
-
 ## v0.1.0 —— 第一次能装
 
 一句话：**把文档里的一句话，在每个 commit 上验一遍真假**，回答「什么时候开始假的、假了多久、最后是怎么收场的」。
+
+### 怎么装
+
+```bash
+npm install -g github:haimikao0721-a11y/Laminae#v0.1.0
+laminae --help
+```
+
+不经 npm 注册表，装完自动打包（第一次多花十几秒）。
+
+也可以不装，直接用仓库里的源码：
+
+```bash
+node <laminae>/scripts/run.ts
+```
 
 ### 能做什么
 
@@ -50,29 +26,6 @@ npm 发现 bin 指向的文件不存在就**静默跳过**建立命令链接。
 - 每个假段按收场方式归类：现实追上了说法 / 文档追上了现实 / 文档被改正 / 说法被删 / 两边都变了
 - 往下看一层、层与层对不上的地方、模块引用图、想法与边界
 - 单文件 HTML 报告，数据、样式、脚本全部内联，无外部请求
-
-### 一条命令装
-
-```bash
-npm install -g laminae      # 或者 npx laminae
-laminae --help
-```
-
-也可以不装，直接跑仓库里的源码：
-
-```bash
-node <laminae>/scripts/run.ts
-```
-
-### 第一次用
-
-```bash
-cd 你的项目
-laminae init --dry-run   # 先看文档里能挑出什么，不写文件
-laminae init             # 逐条确认，写出 .laminae/claims.json
-# 把生成的事实改成该数的东西（草稿里是占位）
-laminae run              # 报告落在 .laminae/runs/<id>/laminae.html
-```
 
 ### 八个子命令
 
@@ -89,10 +42,20 @@ laminae run              # 报告落在 .laminae/runs/<id>/laminae.html
 
 每个都能 `laminae <命令> --help`。
 
-### 用时容易踩的几件事
+### 第一次用
+
+```bash
+cd 你的项目
+laminae init --dry-run   # 先看文档里能挑出什么，不写文件
+laminae init             # 逐条确认，写出 .laminae/claims.json
+# 把生成的事实改成该数的东西（草稿里是占位）
+laminae run              # 报告落在 .laminae/runs/<id>/laminae.html
+```
+
+### 用时容易踩的六件事
 
 **一、`init` 写出的事实是占位。**
-它写的是「数所有文件」这类默认值，和文档那句话没关系。报告里会照常显示成真或假，但那些格子不能当真。工具会明确标出来 —— 看到「量错了」就去改 `fact`。
+它写的是「数所有文件」这类默认值，和文档那句话没关系。报告里会照常显示成真或假，但那些格子不能当真。工具会明确标成「量错了」——看到就去改 `fact`。
 
 **二、一条说法只捕获一个数。**
 「1600–1800」要拆成下限和上限两条；「1600+」要自己写 `compare: gte`，否则会被判成假。
@@ -122,3 +85,7 @@ laminae run              # 报告落在 .laminae/runs/<id>/laminae.html
 - 292 条测试，其中 30 多条是端到端
 - 在真实仓库上跑过并逐条核对：vuejs/core（6513 个主线提交）、pallets/click（824 个合并）、archify（889 文件）、ElyOffice（1971 文件）
 - 判定类输出在这四个仓库上没有出过错；出错的全是「工具自己觉得这里有问题」那一类，已逐类修正
+
+### 装进来是什么
+
+37 个文件、0.96 MB：`build/` 15 个（打包产物）、`docs/` 13 个、`dist/app.js`、`web/style.css`、根目录几份说明。

@@ -1,6 +1,6 @@
 {
   "name": "laminae",
-  "version": "0.1.2",
+  "version": "0.1.0",
   "description": "把「一条说法在每个 commit 上是真是假」存成序列，回答：什么时候开始假的、假了多久；最后是真修好还是改了文档让不一致消失",
   "type": "module",
   "license": "MIT",
