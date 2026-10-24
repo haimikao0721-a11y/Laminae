@@ -31,10 +31,12 @@ import { REPO } from "./config.ts";
 import { checkRunId, defaultRunId, uniqueRunId, listRuns, readLatest } from "./runid.ts";
 import fs from "node:fs";
 
+import { findSkillRoot } from "./root.ts";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** laminae 自身（skill）的根目录，用来找预构建的浏览器端脚本与样式 */
-export const SKILL_ROOT = path.resolve(HERE, "../..");
+export const SKILL_ROOT = findSkillRoot(HERE);
 
 const env = (name: string): string | undefined => (process.env[name] ? path.resolve(process.env[name]!) : undefined);
 

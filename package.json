@@ -1,10 +1,39 @@
 {
   "name": "laminae",
   "version": "0.1.0",
-  "private": true,
   "description": "把「一条说法在每个 commit 上是真是假」存成序列，回答：什么时候开始假的、假了多久；最后是真修好还是改了文档让不一致消失",
   "type": "module",
   "license": "MIT",
+  "bin": {
+    "laminae": "build/laminae.mjs"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "files": [
+    "build",
+    "dist",
+    "web",
+    "docs/LESSONS.md",
+    "docs/LESSONS.en.md",
+    "docs/STATUS.md",
+    "docs/STATUS.en.md",
+    "docs/REFERENCE.md",
+    "docs/REFERENCE.en.md",
+    "docs/PATTERNS.md",
+    "docs/PATTERNS.en.md",
+    "docs/SPEC.md",
+    "docs/SPEC.en.md",
+    "docs/LANGUAGES.md",
+    "docs/LANGUAGES.en.md",
+    "docs/LAYOUT.md",
+    "SKILL.md",
+    "SKILL.en.md",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/haimikao0721-a11y/Laminae.git"
@@ -19,7 +48,10 @@
     "build:web": "node scripts/build-web.ts",
     "snapshot": "node scripts/snapshot.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "build:cli": "node scripts/build-cli.ts",
+    "build": "node scripts/build-cli.ts && node scripts/build-web.ts",
+    "prepublishOnly": "node scripts/build-cli.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

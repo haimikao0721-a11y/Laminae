@@ -18,9 +18,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { findSubRepos } from "./repos.ts";
+import { findSkillRoot } from "./root.ts";
 
 /** 工具自己的根。目标仓库不能是这里 */
-const SKILL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const SKILL_ROOT = findSkillRoot(path.dirname(fileURLToPath(import.meta.url)));
 
 function realDir(p: string): string {
   try {
