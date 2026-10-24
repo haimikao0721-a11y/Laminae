@@ -52,9 +52,9 @@ There are also 6 fixtures built for specific behaviours (call chains, branches, 
 |---|---|
 | Claim verdicts | 3 claims on click, 4 on vue, each cross-checked by hand; `verify` recomputes them from git |
 | Call-chain tracing | A four-level cross-file chain, intra-file nesting, and a call wrapped in an `if` all reach the bottom |
-| Branch "fixed but unmerged" | A fixture with an unmerged branch reports correctly |
+| Branch "fixed but unmerged" | A fixture with an unmerged branch; also run on click's 3 branches, with each finding checked against git |
 | Command facts on a branch | A constructed repository where the command fails on main and passes on the branch reports `main=false branch=true` |
-| Merge "the fix was lost" | A fixture whose merge dropped a file reports correctly |
+| Merge "the fix was lost" | A fixture whose merge dropped a file; also run over click's **824 merges** (114 seconds), 1 finding reported and checked against git |
 | Reproducible artifacts | The same payload rendered twice is byte-identical; a single edited character is caught |
 | Multiple languages | JS/TS (including JSX and SFC), Python and Rust each have a syntax module; Rust was validated on 703 files in ElyOffice |
 | Evidence grades | every bucket must declare one — adding a bucket without it fails to compile; wording is pinned by a test |
