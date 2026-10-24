@@ -96,7 +96,7 @@ const warningsHtml = (): string => {
   if (wrong > 0) parts.push(`${wrong} 条量错了东西，状态照样会显示成真或假 —— 那些格子不能当真`);
   const head = parts.length > 0 ? `${parts.join("；")}。` : "这些不影响判定，只是写法或性能上的提示。";
   return `<section class="card warnings" id="claim-warnings">
-  <h2>先说清楚：有 ${w.length} 条说法写得有问题<small>${head}</small></h2>
+  <h2>先说清楚<small>有 ${w.length} 条警告。${head}</small></h2>
   <ul>${items}</ul>
   <p class="hintline">这里只报写法问题，不改判定。就像你不该把「我没测」当成「文档没写」一样。</p>
 </section>`;
