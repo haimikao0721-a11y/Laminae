@@ -1,5 +1,32 @@
 # 更新记录
 
+## v0.1.1 —— 从 GitHub 直接装
+
+v0.1.0 的那个 tag **装不出命令**，这一版修掉。现在：
+
+```bash
+npm install -g github:haimikao0721-a11y/Laminae#v0.1.1
+laminae --help
+```
+
+### 修了什么
+
+**一、`npm install github:...` 装完没有 laminae 命令，而且不报错。**
+`build/` 里是打包产物、不进版本库，而 bin 指向 `build/laminae.mjs`。
+从注册表装时文件都在 tarball 里；从 git 装时仓库里根本没有 build/，
+npm 发现 bin 指向的文件不存在就**静默跳过**建立命令链接。
+加了 `prepare` 脚本，装完依赖后自动打包。
+
+**二、包里带了不该带的。** 原来整个 `web/` 都打进去，包括 7 个 `.ts` 源码约 130 KB。
+运行时只需要 `dist/app.js` 和 `web/style.css`。
+
+**三、README 的五张截图不在发布清单里。** 相对路径在 npm 页面上是裂图，改成绝对地址。
+
+### 验证
+
+- 从分支装：35 秒，命令有了，`laminae run` 在 click 上跑完产出 444 KB 报告，`verify` 4 项通过
+- 292 条测试全过
+
 ## v0.1.0 —— 第一次能装
 
 一句话：**把文档里的一句话，在每个 commit 上验一遍真假**，回答「什么时候开始假的、假了多久、最后是怎么收场的」。

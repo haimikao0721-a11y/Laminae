@@ -60,7 +60,7 @@ A per-commit module reference graph, module-level imports only. By default it on
 Install it as one command, straight from the repository, without going through the npm registry:
 
 ```bash
-npm install -g github:haimikao0721-a11y/Laminae#v0.1.0
+npm install -g github:haimikao0721-a11y/Laminae#v0.1.1
 laminae --help
 ```
 
