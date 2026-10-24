@@ -1,5 +1,17 @@
 # 更新记录
 
+## v0.1.2 —— 版本号对上了
+
+v0.1.1 改了安装但忘了改 `package.json` 里的 `version`，于是 `laminae --version` 说自己还是 0.1.0。
+这一版只做一件事：**版本号跟 tag 一致**。
+
+```bash
+npm install -g github:haimikao0721-a11y/Laminae#v0.1.2
+laminae --version   # 0.1.2
+```
+
+从 v0.1.2 起，打 tag 之前先看 `package.json` 的版本——这一条也写进了 CONTRIBUTING。
+
 ## v0.1.1 —— 从 GitHub 直接装
 
 v0.1.0 的那个 tag **装不出命令**，这一版修掉。现在：
